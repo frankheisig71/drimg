@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/">
+        <file>Icons/DeselectAll.png</file>
+        <file>Icons/AddFiles.png</file>
+        <file>Icons/DestDir.png</file>
+        <file>Icons/DirUp.png</file>
+        <file>Icons/Extract.png</file>
+        <file>Icons/OpenDir.png</file>
+        <file>Icons/OpenFolder.png</file>
+        <file>Icons/Quit.png</file>
+        <file>Icons/atarifolder.png</file>
+    </qresource>
+</RCC>
