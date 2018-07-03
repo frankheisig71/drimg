@@ -4,6 +4,9 @@
 #include <QDialog>
 #include <QModelIndex>
 
+#define FRANKS_DEBUG
+#define WINDOWS
+
 namespace Ui {
 class GemdDlg;
 }
@@ -17,20 +20,31 @@ public:
     ~GemdDlg();
 
     void loadroot();
-    void ShowUF();
+    void ShowPartitionUsage();
     void opensubd(int index);
     void subdirh();
-    void subdl();
+    void DirUp();
+    void LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer);
+    void LoadSubDir(bool IsRoot, bool doList);
+    int  LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, bool doList);
+    int  ExtractFile(unsigned char* DirBuffer, int pos);
+    void EraseFile(unsigned char* DirBuffer, int EntryPos);
+    void GetFATFileName(unsigned char* DirBuffer, int DirPos, char* NameBuffer);
+    void EnterSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, unsigned int* StartCluster, bool MakeLocalDir, bool EnterLocalDir);
+    bool EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* StartCluster, unsigned int* EntryPos, bool ChangeLocalDir);
+    void WriteCurrentDirBuf(void);
+    bool AddFileToCurrentDir(char* FilePathName, unsigned char* DirBuffer);
+
 
 private slots:
     void on_partLB_clicked(const QModelIndex &index);
     void on_filesLB_doubleClicked(const QModelIndex &index);
     void on_opdirP_clicked();
-    void on_dirupP_clicked();
+    void on_DeleteFiles_clicked();
     void on_setddP_clicked();
-    void on_extrP_clicked();
+    void on_ExtractFiles_clicked();
     void on_timeCB_clicked();
-    void on_addfP_clicked();
+    void on_AddFiles_clicked();
 
     void on_newfP_clicked();
 

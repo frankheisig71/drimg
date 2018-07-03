@@ -28,7 +28,13 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <utime.h>
+#ifdef WINDOWS
+ #include <time.h>
+ #include <windows.h>
+ #include <sys/stat.h>
+#else
+ #include <utime.h>
+#endif
 #include <sys/stat.h>
 
 typedef unsigned long  ULONG;
@@ -40,16 +46,16 @@ extern int Fsub ;  // Swap request flag - by read or write drive
 extern QString fileName;
 extern QString op, qhm;
 extern FILE *finp, *fout, *ftout, *flout ;
-extern ULONG filelen, m, u ;
+extern ULONG filelen, u ;
 extern ULONG ChaSecCnt ;
 
 extern int selected;
-extern int c,n,k,i, o, p, s, fscanp ;
+extern int c,k,i, o, p, s, fscanp ;
 extern char detDev[9][16] ;
 extern char physd[9];
 extern char loadedF[256] ;
 extern int form;
-extern int secsize, clust ;
+extern int PartSectorSizee, clust ;
 extern int status ;
 
 extern char segflag ;
@@ -70,27 +76,29 @@ extern QString litet;
 
 
 int drih;
-ULONG epos, eposIn, partpos, stfilelen, copied ;
+ULONG epos, eposIn, PartStartPosition, stfilelen, copied ;
 ULONG Gpartp[24] ; // GemDos part postions
 ULONG Gparsiz[24] ; // GemDos part sizes
-ULONG  PartSec ,PartClu ;
+ULONG  PartTotalSectors ,PartTotalDataClusters ;
 ULONG  dirflen, oldclun ;
-int sublev, reculev, selcnt, selP, j, d, e ;
+int PartSubDirLevel, reculev, selcnt, selP, j, d, e ;
 int fdat, ftim ;
-unsigned int oe, direc, zz, staclu, fileClucnt ;
-unsigned int dpos, logsec, nextf, fatTime, fatDate, SecSiz ;
-unsigned int dirlen, CurDirLen, fx, pusec, pfrec, ResSec ; // Used clusters, free clusters of partition
-UINT fatsec , dirsec, clusec, FdatS,  DirBeg, ClunOfParent  ;
-long tosave, remain ;
+unsigned int oe, zz, staclu;
+unsigned int dpos, fatTime, fatDate, PartSectorSize ;
+unsigned int PartReservedSectors ; // Used clusters, free clusters of partition
+UINT PartSectorsPerFAT , PartRootDirSectors, PartSectorsPerCluster, PartHeadSectors,  PartFirstRootDirSector, ClunOfParent  ;
+long tosave;
 
-unsigned long msapos, msapos2;
+unsigned int  DirCurrentClustes[98] ; // For storing DIR cluster -> Points To Sector
+unsigned int  DirCurrentLenght;
+unsigned int  DirCurrentClusterCnt;
+
 unsigned int  dirpos[512] ;
 unsigned int  pdirpos[8] ; // Position in parent dir, by recursive extraction
-unsigned int  DirClus[98] ; // For storing DIR cluster spread
 unsigned int  credirClu[16] ; // Created DIR cluster spread store
 unsigned int  credirCnt;
 unsigned char dirbuf[512*100];
-unsigned char fatbuf[132000] ;
+unsigned char PartFATbuffer[132000] ;
 unsigned char trasb[65536] ;  // 128 sector
 char subnam[12][8] ;
 char subdnam[13] ;
@@ -98,17 +106,22 @@ char subpath[256];
 char DestDir[256];
 char res ;
 bool timestCur=0;
+const unsigned long INVALID_VALUE = 0xFFFFFFFF;
+const unsigned long LAST_CLUSTER  = 0xFFFF;
 
+#ifdef FRANKS_DEBUG
+unsigned char* debug_dirbuf;
+#endif
 
 GemdDlg::GemdDlg(QWidget *parent) :
     QDialog(parent),
     ui(new Ui::GemdDlg)
 {
     ui->setupUi(this);
-    ui->addfP->setIcon(QIcon(":/Icons/AddFiles.png"));
+    ui->AddFiles->setIcon(QIcon(":/Icons/AddFiles.png"));
     ui->desallP->setIcon(QIcon(":/Icons/DeselectAll.png"));
-    ui->dirupP->setIcon(QIcon(":/Icons/DirUp.png"));
-    ui->extrP->setIcon(QIcon(":/Icons/Extract.png"));
+    ui->DeleteFiles->setIcon(QIcon(":/Icons/DeleteFiles.png"));
+    ui->ExtractFiles->setIcon(QIcon(":/Icons/Extract.png"));
     ui->opdirP->setIcon(QIcon(":/Icons/OpenDir.png"));
     ui->quitP->setIcon(QIcon(":/Icons/Quit.png"));
     ui->setddP->setIcon(QIcon(":/Icons/DestDir.png"));
@@ -124,7 +137,12 @@ GemdDlg::~GemdDlg()
 // This is because of function name 'close' conflict!!!!!
 int fileopen(const char* fname, const ULONG flags)
 {
-    return open(fname, flags);
+    int fd;
+    fd = open(fname, flags);
+    #ifdef WINDOWS
+    _setmode(fd, _O_BINARY);
+    #endif
+    return fd;
 }
 int fileclose(int fd)
 {
@@ -163,6 +181,8 @@ void GenerateFileName(unsigned char* buf, int offs, QString *name)
 void GemdDlg::OpenDialog()
 {
    int p;
+   unsigned long m, n;
+
    // Open file or physical drive:
    if (selected<16){
       for (k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
@@ -227,35 +247,35 @@ void GemdDlg::OpenDialog()
          if ( bufr[i+4] == 5 ) {  // Extended
             // Position, absolute, in sectors
             epos = bufr[i+8]+bufr[i+9]*256 + bufr[i+10]*65536 +bufr[i+11]*16777216 ;
-dosfp1:
-            strcpy(dstr,"Ext. ");
-            lseek(drih, epos*512, 0);
-            read(drih, buf2, 512);
-            // First entry must be regular partition
-            if (( buf2[0x1C2] == 6 ) || ( buf2[0x1C2] == 4 )){
-               //Get pos, absolute:
-               Gpartp[p] =  epos + buf2[0x1C6]+buf2[0x1C7]*256 + buf2[0x1C8]*65536 +buf2[0x1C9]*16777216 ;
-               // Get size:
-               Gparsiz[p] = buf2[0x1CA]+buf2[0x1CB]*256 + buf2[0x1CC]*65536 +buf2[0x1CD]*16777216 ;
-               // Size in KB:
-               qhm.setNum(Gparsiz[p]/2);
-               if ( buf2[0x1C2] == 6 ) {  // BigDOS code
-                  qhm.insert(0, "BigDOS: ");
+            do{
+               strcpy(dstr,"Ext. ");
+               lseek(drih, epos*512, 0);
+               read(drih, buf2, 512);
+               // First entry must be regular partition
+               if (( buf2[0x1C2] == 6 ) || ( buf2[0x1C2] == 4 )){
+                  //Get pos, absolute:
+                  Gpartp[p] =  epos + buf2[0x1C6]+buf2[0x1C7]*256 + buf2[0x1C8]*65536 +buf2[0x1C9]*16777216 ;
+                  // Get size:
+                  Gparsiz[p] = buf2[0x1CA]+buf2[0x1CB]*256 + buf2[0x1CC]*65536 +buf2[0x1CD]*16777216 ;
+                  // Size in KB:
+                  qhm.setNum(Gparsiz[p]/2);
+                  if ( buf2[0x1C2] == 6 ) {  // BigDOS code
+                     qhm.insert(0, "BigDOS: ");
+                  }
+                  if ( buf2[0x1C2] == 4 ) {  // DOS16 code
+                     qhm.insert(0, "DOS16: ");
+                  }
+                  qhm.append(" KB");
+                  ui->partLB->addItem(qhm) ;
+                  //SendMessage(GetDlgItem(hDlgWnd, GemP), LB_ADDSTRING, 0, (LPARAM) dstr );
+                  p++ ;
+                  if ( p> 24 ) break ;
+                  // Look for further Extended slots:
+               } //dlookext2:
+               if ( buf2[0x1D2] == 5 ) {
+                  epos = epos+buf2[0x1D6]+buf2[0x1D7]*256 + buf2[0x1D8]*65536 +buf2[0x1D9]*16777216 ;
                }
-               if ( buf2[0x1C2] == 4 ) {  // DOS16 code
-                  qhm.insert(0, "DOS16: ");
-               }
-               qhm.append(" KB");
-               ui->partLB->addItem(qhm) ;
-               //SendMessage(GetDlgItem(hDlgWnd, GemP), LB_ADDSTRING, 0, (LPARAM) dstr );
-               p++ ;
-               if ( p> 24 ) break ;
-               // Look for further Extended slots:
-            } //dlookext2:
-            if ( buf2[0x1D2] == 5 ) {
-               epos = epos+buf2[0x1D6]+buf2[0x1D7]*256 + buf2[0x1D8]*65536 +buf2[0x1D9]*16777216 ;
-               goto dosfp1 ;
-            }
+            }while( buf2[0x1D2] == 5 );
             if ( buf2[0x1D2] == 0 ) break ; // End of chain
          }
       } // i loop end
@@ -327,37 +347,40 @@ gemsfp1:
 
 void GemdDlg::on_partLB_clicked(const QModelIndex &index)
 {
+   unsigned int  n, m;
+   unsigned char k;
+
    selP = index.row();
    //Load bootsector of partition:
-   partpos =  Gpartp[selP]*512 ;
-   lseek(drih, partpos, 0 );
+   PartStartPosition =  Gpartp[selP]*512 ;
+   lseek(drih, PartStartPosition, 0 );
    read(drih, buf2, 512);
    if (Swf)
    {   // Swap low/high bytes:
-       for (n=0;n<512;n=n+2)
+       for (unsigned int n=0;n<512;n=n+2)
        { k=buf2[n] ; buf2[n]=buf2[n+1];buf2[n+1]=k; }
    }
    // Get BPB parameters:
-   SecSiz = buf2[11]+256*buf2[12] ;
-   fatsec = buf2[22] ;
-   n      = SecSiz>>9 ;
-   dirsec = (buf2[17]/16 + 16*buf2[18])/n ;
-   clusec = buf2[13] ;
-   ResSec = buf2[14]+256*buf2[15] ;
-   FdatS  = ResSec+fatsec*2+dirsec ;
-   DirBeg = ResSec+fatsec*2 ;
-   PartSec= buf2[19]+256*buf2[20] ;
-   if ( PartSec == 0 ){
-       PartSec = buf2[32]+buf2[33]*256 + buf2[34]*65536 +buf2[35]*16777216 ;
+   PartSectorSize         = buf2[11]+256*buf2[12] ;
+   PartSectorsPerFAT      = buf2[22] ;
+   n = PartSectorSize>>9 ;
+   PartRootDirSectors     = (buf2[17]/16 + 16*buf2[18])/n ;
+   PartSectorsPerCluster  = buf2[13] ;
+   PartReservedSectors    = buf2[14]+256*buf2[15] ;
+   PartHeadSectors        = PartReservedSectors+PartSectorsPerFAT*2+PartRootDirSectors ;
+   PartFirstRootDirSector = PartReservedSectors+PartSectorsPerFAT*2 ;
+   PartTotalSectors= buf2[19]+256*buf2[20] ;
+   if ( PartTotalSectors == 0 ){
+       PartTotalSectors = buf2[32]+buf2[33]*256 + buf2[34]*65536 +buf2[35]*16777216 ;
    }
-   PartClu = (PartSec-FdatS)/clusec ;
+   PartTotalDataClusters = (PartTotalSectors-PartHeadSectors)/PartSectorsPerCluster ;
    // Display begin sector and count of sectors of selected part. :
 
    qhm.setNum( Gpartp[selP] );
    qhm.append(", ");
    QString num;
    if ( Filesys == 13) {
-      num.setNum( PartSec );
+      num.setNum( PartTotalSectors );
    }
    else {
        num.setNum( Gparsiz[selP] );
@@ -365,18 +388,18 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    qhm.append(num);
    ui->partinfLab->setText(qhm);
    // Load FAT #1
-   lseek(drih, partpos+SecSiz*ResSec, 0) ;
-   read(drih, fatbuf, fatsec*SecSiz);
+   lseek(drih, PartStartPosition+PartSectorSize*PartReservedSectors, 0) ;
+   read(drih, PartFATbuffer, PartSectorsPerFAT*PartSectorSize);
    if (Swf)
    {   // Swap low/high bytes:
-       for (m=0;m<fatsec*SecSiz;m=m+2){
-          k=fatbuf[m] ; fatbuf[m]=fatbuf[m+1];fatbuf[m+1]=k;
+       for (m=0;m<PartSectorsPerFAT*PartSectorSize;m=m+2){
+          k=PartFATbuffer[m] ; PartFATbuffer[m]=PartFATbuffer[m+1];PartFATbuffer[m+1]=k;
        }
    }
    // Testing:
    /*
    flout = fopen("TheFat.bin","wb");
-   fwrite(fatbuf,1,fatsec*512 ,flout);
+   fwrite(PartFATbuffer,1,PartSectorsPerFAT*512 ,flout);
    fclose(flout);
    */
    // Load root DIR
@@ -386,54 +409,49 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
 
 void GemdDlg::loadroot()
 {
-   lseek(drih, partpos+DirBeg*SecSiz, 0 );
-   read(drih, dirbuf, dirsec*SecSiz);
+   lseek(drih, PartStartPosition+PartFirstRootDirSector*PartSectorSize, 0 );
+   read(drih, dirbuf, PartRootDirSectors*PartSectorSize);
    if (Swf)
    {   // Swap low/high bytes:
-      for (m=0;m<dirsec*SecSiz;m=m+2){
+      for (unsigned long m=0;m<PartRootDirSectors*PartSectorSize;m=m+2){
          k=dirbuf[m] ; dirbuf[m]=dirbuf[m+1];dirbuf[m+1]=k;
       }
    }
    // List files from ROOT dir:
    ui->dirLabel->setText("ROOT");
    //SetDlgItemText(hDlgWnd,CurDir,"ROOT");
-   CurDirLen = dirsec ;
-   ui->filesLB->clear();
-   //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_RESETCONTENT, 0, 0);  //Empty list
-   sublev = 0;
+   DirCurrentLenght = PartRootDirSectors ;
+   PartSubDirLevel = 0;
    ClunOfParent = 0 ;
-   direc = 0 ;
-   for (UINT n=0;n<SecSiz*dirsec;n = n+32) {
-      if (dirbuf[n] == 0) break ;
-      if (dirbuf[n] == 0xE5) continue ; // Skip deleted
-      dirpos[direc] = n ; // Store pos (bytewise) in DIR
-      direc++ ;
-      GenerateFileName(dirbuf, n, &qhm);
-      // Put filename in list
-      ui->filesLB->addItem(qhm) ;
-      //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_ADDSTRING, 0, (LPARAM) dstr);
-   }
-   ShowUF() ;
+   DirCurrentLenght = PartRootDirSectors; // Current DIR length in sectors
+   LoadSubDir(true, true);
+   ShowPartitionUsage() ;
 }
-void GemdDlg::ShowUF()
+unsigned int GetFreeClusters(void)
 {
-   int SecsFact ;
-   // Walk FAT for free clusters
-   //msapos = 4 ; // pos of first FAT entry
-   dpos = 0 ;
-   SecsFact = SecSiz/512 ;
-   for(UINT n = 4; n < (2*PartClu+4);  n = n+2 ) {
-      fx = fatbuf[n]+256*fatbuf[n+1] ;
-      if ( fx == 0 ) dpos++  ;
+   unsigned int i = 0 ;
+   unsigned short fx;
+
+   for(unsigned int n = 4; n < (2*PartTotalDataClusters+4);  n = n+2 ) {
+      fx = PartFATbuffer[n]+256*PartFATbuffer[n+1] ;
+      if ( fx == 0 ) i++  ;
    }
-   pfrec = dpos ;
-   pusec = PartClu-dpos ;
-   qhm.setNum( (pusec*clusec)/2*SecsFact);
-   //ltoa( (pusec*clusec)/2 ,khm, 10);
+   return(i);
+}
+
+void GemdDlg::ShowPartitionUsage()
+{
+   unsigned int  SecsFact;
+   unsigned long UsedClusters, FreeClusters;
+
+   SecsFact = PartSectorSize/512 ;
+   FreeClusters = GetFreeClusters();
+   UsedClusters = PartTotalDataClusters-FreeClusters;
+   qhm.setNum( (UsedClusters*PartSectorsPerCluster)/2*SecsFact);
    qhm.insert(0,"Used: ");
    qhm.append(" KB  Free: ");
    QString num;
-   num.setNum( (dpos*clusec)/2*SecsFact );
+   num.setNum( (FreeClusters*PartSectorsPerCluster)/2*SecsFact );
    qhm.append(num);
    qhm.append(" KB");
    ui->usfrLabel->setText(qhm);
@@ -446,68 +464,75 @@ void   GemdDlg::opensubd(int index)
       o = dirbuf[dpos+11] ;
       if ((o & 16) == 16 ) {     // If not SubDir break
          //SetCursor( jc) ;
-         sublev++ ;
+         PartSubDirLevel++ ;
          staclu = dirbuf[dpos+26]+256*dirbuf[dpos+27] ;
          //Get dir name:
          for (int o=0; o<11; o++) {
             dstr[o] = dirbuf[dpos+o] ;
             // store SUBdir name
-            subnam[o][sublev] = dirbuf[dpos+o];
+            subnam[o][PartSubDirLevel] = dirbuf[dpos+o];
          }
       subdirh() ;
       }
    }  // perform only for first selected item!!!
 }
 
-void fatlosn(unsigned int clun) // For FAT 16 MS DOS
+void FATlookUp(unsigned int StartCluster, unsigned int* NextCluster, unsigned int* FileSector) // For FAT 16 MS DOS
 {
-  int  fp ;
-  fp = 2*clun  ; // double of...
-  nextf = fatbuf[fp]+256*fatbuf[fp+1] ;
-  logsec = FdatS+(clun-2)*clusec ; //first sector of cluster
+  int fp = 2*StartCluster  ; // 2 times because it' a byte-array holding words
+  *NextCluster = PartFATbuffer[fp]+256*PartFATbuffer[fp+1] ;
+  *FileSector = PartHeadSectors+(StartCluster-2)*PartSectorsPerCluster ; //first sector of cluster
+}
+void FATfreeCluster(unsigned int Cluster)
+{
+  int fp = 2*Cluster  ; // 2 times because it' a byte-array holding words
+  PartFATbuffer[fp] = 0;
+  PartFATbuffer[fp+1] = 0;
 }
 
-int loadsecs( int lsec, int secn, unsigned char *ldbuf)
+int ReadSectors( int StartSector, int Count, unsigned char *Buffer)
 {
-   lseek(drih, partpos+lsec*SecSiz, 0 );
-   if (Swf) { j = secn*SecSiz/512 ;
+   int d,e,j;
+
+   lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
+   if (Swf) { j = Count*PartSectorSize/512 ;
       for (e=0;e<j;e++)
       { read(drih, bufsw, 512);
-         for (d=0;d<512;d=d+2) { ldbuf[d+e*512]=bufsw[d+1] ; ldbuf[d+1+e*512]=bufsw[d]; }
+         for (d=0;d<512;d=d+2) { Buffer[d+e*512]=bufsw[d+1] ; Buffer[d+1+e*512]=bufsw[d]; }
       }
    }
    else {
-      read(drih, ldbuf, secn*SecSiz);
+      read(drih, Buffer, Count*PartSectorSize);
    }
    return 1;
 }
-ULONG writsecs( int lsec, int secn, unsigned char *ldbuf)
+ULONG WriteSectors( int StartSector, int Count, unsigned char *Buffer)
 {
-    lseek(drih, partpos+lsec*SecSiz, 0 );
+    lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
     if (Swf) {
-        j = secn*SecSiz/512;
+        j = Count*PartSectorSize/512;
         u = 0;
         for (e=0;e<j;e++) {
            for (d=0;d<512;d=d+2) {
-               bufsw[d+1]=ldbuf[d+e*512] ;
-               bufsw[d]=ldbuf[d+1+e*512];
+               bufsw[d+1]=Buffer[d+e*512] ;
+               bufsw[d]=Buffer[d+1+e*512];
            }
           u = u+ write(drih, bufsw, 512);
         }
         return u ;
     }
-    return  write(drih, ldbuf, secn*SecSiz);
+    return  write(drih, Buffer, Count*PartSectorSize);
 }
 
 void GemdDlg::subdirh()
 {
    dstr[11] = 0 ;
    ClunOfParent = staclu ; // Keep this value for SubDIR creation
-   if ( sublev ) {
+   if ( PartSubDirLevel ) {
       int spafl;
       subpath[0] = '/';
       c=1;
-      for(o=0;o<sublev;o++){
+      for(o=0;o<PartSubDirLevel;o++){
          spafl = 0;
          for(i=0;i<11;i++) {
             k = subnam[i][o+1] ;
@@ -530,61 +555,79 @@ void GemdDlg::subdirh()
    else { ui->dirLabel->setText(dstr); }
    //SetDlgItemText(hDlgWnd,CurDir,dstr);
    // Now load it to dirbuf
-   msapos = 0;
-   n = 0; // Counter for FatClus
-   do{ //fatop2:
-      fatlosn(staclu) ;
-      //load cluster
-      // Store loaded cluster start sector numbers for further writes!!
-      DirClus[n] = logsec ;
-      res = loadsecs(logsec, clusec, dirbuf+msapos);
-      //if (!res) goto subdirhend ; //loadsecs returns always true
-      msapos = msapos+clusec*SecSiz ;
-      n++;
-      if ( nextf>0xFFF0 ){ break; }// For FAT 16
-      staclu = nextf ;
-   }while(msapos<512*98);// if (msapos<512*98){ goto fatop2; }
-   //subdirf:
-   CurDirLen = n*clusec ; // Current DIR length in sectors
-   //Clear following sector for sure
-   for (o=0;o<512;o++){ dirbuf[msapos+o] = 0; }
+   LoadDirBuf(&staclu, dirbuf);
    //subdirl:
-   ui->filesLB->clear();
-   //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_RESETCONTENT, 0, 0);  //Empty list
-   direc = 0 ;
-   //for (n=0;n<512*98; n=n+32) {
-   for (UINT n=0;n<CurDirLen*SecSiz; n=n+32) {
-      if (dirbuf[n] == 0) break ;
-      if (dirbuf[n] == 0xE5) continue ; // Skip deleted
-      if (dirbuf[n] == 0x2E) continue ; // Skip subdir marks
-      dirpos[direc] = n ; // Store pos (bytewise) in DIR
-      direc++ ;
-      GenerateFileName(dirbuf, n, &qhm);
-      // Put filename in list
-      ui->filesLB->addItem(qhm);
-      //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_ADDSTRING, 0, (LPARAM) dstr);
-   }
+   LoadSubDir(false, true);
    //subdirhend: ; // Here some error message!!! TODO
 }
-void GemdDlg::subdl()
-
+void GemdDlg::LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer)
 {
-   ui->filesLB->clear();
-   //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_RESETCONTENT, 0, 0);  //Empty list
-   direc = 0 ;
-   for (UINT n=0;n<CurDirLen*SecSiz; n=n+32) {
-      if (dirbuf[n] == 0) break ;
-      if (dirbuf[n] == 0xE5) continue ; // Skip deleted
-      if (dirbuf[n] == 0x2E) continue ; // Skip subdir marks
-      dirpos[direc] = n ; // Store pos (bytewise) in DIR
-      direc++ ;
-      GenerateFileName(dirbuf, n, &qhm);
-      // Put filename in list
-      ui->filesLB->addItem(qhm);
+   int n = 0;
+   unsigned int NextCluster, FileSector;
+   unsigned long CurrentBufOffs = 0;
+
+   do{ //fatop2:
+      FATlookUp(*StartCluster, &NextCluster, &FileSector) ;
+      //load cluster
+      // Store loaded cluster start sector numbers for further writes!!
+      DirCurrentClustes[n] = FileSector ;
+      res = ReadSectors(FileSector, PartSectorsPerCluster, dirbuf+CurrentBufOffs);
+      CurrentBufOffs = CurrentBufOffs+PartSectorsPerCluster*PartSectorSize ;
+      n++;
+      if ( NextCluster>0xFFF0 ){ break; }// For FAT 16
+      *StartCluster = NextCluster ;
+   }while(CurrentBufOffs<512*98);
+   //subdirf:
+   DirCurrentLenght = n*PartSectorsPerCluster ; // Current DIR length in sectors
+   DirCurrentClusterCnt = n;
+   //Clear following sector for sure
+   for (int o=0; o<512; o++){ DirBuffer[CurrentBufOffs+o] = 0; }
+}
+void GemdDlg::WriteCurrentDirBuf(void)
+{
+   unsigned long CurrentBufOffs = 0;
+
+   if ( PartSubDirLevel == 0 ) WriteSectors( PartFirstRootDirSector, PartRootDirSectors, dirbuf);
+   else  {
+      for (unsigned int i=0; i<DirCurrentClusterCnt; i++){
+         WriteSectors( DirCurrentClustes[i], PartSectorsPerCluster, dirbuf+CurrentBufOffs);
+         CurrentBufOffs = CurrentBufOffs+PartSectorsPerCluster*PartSectorSize;
+      }
    }
 }
 
-void GemdDlg::on_dirupP_clicked()
+int GemdDlg::LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, bool doList)
+{
+   if (DirBuffer[EntryPos] == 0) return 1 ;  // Skip empty
+   if (DirBuffer[EntryPos] == 0xE5) return 2 ; // Skip deleted
+   if ((!IsRoot) && (DirBuffer[EntryPos] == 0x2E)) return 2 ; // Skip subdir marks
+   GenerateFileName(DirBuffer, EntryPos, &qhm);
+   // Put filename in list
+   if (doList) ui->filesLB->addItem(qhm);
+   return 0 ;
+}
+
+void GemdDlg::LoadSubDir(bool IsRoot, bool doList)
+{
+   unsigned int direc;
+
+   if (doList){
+       ui->filesLB->clear();
+       if (!IsRoot) ui->filesLB->addItem("..");
+   }
+   direc = 0 ;
+   for (UINT n=0;n<DirCurrentLenght*PartSectorSize; n=n+32) {
+      int rc = LoadEntryName(dirbuf, n, IsRoot, doList);
+      if (rc == 1) break;
+      if (rc == 2) continue;
+      dirpos[direc] = n ; // Store pos (bytewise) in DIR
+      direc++ ;
+   }
+   QCoreApplication::processEvents();
+}
+
+
+void GemdDlg::DirUp()
 {
    //are we in subdir? :
    if (dirbuf[0] == 0x2E) {
@@ -592,8 +635,8 @@ void GemdDlg::on_dirupP_clicked()
       staclu = dirbuf[32+26]+256*dirbuf[32+27] ;
       if (staclu == 0 )  loadroot() ;     //it is root then
       else {
-         sublev-- ;
-         for (o=0;o<11;o++)  dstr[o] = subnam[o][sublev] ;
+         PartSubDirLevel-- ;
+         for (o=0;o<11;o++)  dstr[o] = subnam[o][PartSubDirLevel] ;
          subdirh() ;
       }
    }
@@ -613,12 +656,25 @@ void GemdDlg::on_setddP_clicked()
 
 void GemdDlg::on_filesLB_doubleClicked(const QModelIndex &index)
 {
-   opensubd(index.row());
+   if (PartSubDirLevel > 0) {
+       if (index.row() == 0) { //updir
+           DirUp();
+       } else {
+          opensubd(index.row() - 1);
+       }
+
+   } else { opensubd(index.row()); }
 }
 
 void GemdDlg::on_opdirP_clicked()
 {
-   opensubd(ui->filesLB->currentRow());
+     if (PartSubDirLevel > 0) {
+        if (ui->filesLB->currentRow() == 0) { //updir
+            DirUp();
+        } else {
+           opensubd(ui->filesLB->currentRow() - 1);
+        }
+    } else { opensubd(ui->filesLB->currentRow()); }
 }
 
 void GemdDlg::on_timeCB_clicked()
@@ -627,357 +683,468 @@ void GemdDlg::on_timeCB_clicked()
    else timestCur=0;
 }
 
-void setFiledt(int fdat, int ftim)
+#ifdef WINDOWS
+void SetLocalFileDateTime(int fdate, int ftime, HANDLE fHandle)
+#else
+void SetLocalFileDateTime(int fdate, int ftime, char* FileName)
+#endif
 {
+    #ifdef WINDOWS
+    FILETIME  fildt;
+    #else
     struct utimbuf fildt;
     time_t tim ;
     struct tm tout;
+    #endif
 
-    tout.tm_sec  = ftim & 0x1F ;
-    tout.tm_min  = (ftim>>5) & 0x3F ;
-    tout.tm_hour = (ftim>>11) & 0x1F ;
+    #ifdef WINDOWS
+    DosDateTimeToFileTime(fdate, ftime, &fildt);
+    SetFileTime(fHandle, &fildt, &fildt, &fildt);
+    #else
+    if (fHandle) {};
+    tout.tm_sec  = (ftime & 0x1F) << 1;
+    tout.tm_min  = (ftime>>5) & 0x3F ;
+    tout.tm_hour = (ftime>>11) & 0x1F ;
 
-    tout.tm_mday  = fdat & 0x1F ;
-    tout.tm_mon   = ((fdat>>5) & 0x0F) - 1 ;
-    tout.tm_year  = ((fdat>>9) & 0x7F) + 80 ;
+    tout.tm_mday  = fdate & 0x1F ;
+    tout.tm_mon   = ((fdate>>5) & 0x0F) - 1 ;
+    tout.tm_year  = ((fdate>>9) & 0x7F) + 80 ;
     tout.tm_isdst = 0 ;
     //dirLabel->setText(asctime( &tout));
     tim = mktime( &tout) ;
     fildt.actime = tim;
     fildt.modtime = tim;
-    utime(dstr, &fildt) ;
+    utime(FileName, &fildt) ;
+    #endif
 }
 
-void GemdDlg::on_extrP_clicked()
+int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
 {
+   bool doloop = false;
+   int rc = 0;
+   unsigned int StartCluster, NextCluster, FileSector;
+   unsigned int FileLength, msapos = 0;
+   int RemainingBytes;
+
+   #ifdef WINDOWS
+   HANDLE flout;
+   DWORD  written;
+   wchar_t wtext[256];
+   #endif
+   //load file from drive/image:
+   StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
+   FileLength = 16777216*DirBuffer[EntryPos+31]+65536*DirBuffer[EntryPos+30]+256*DirBuffer[EntryPos+29]+DirBuffer[EntryPos+28] ;
+   RemainingBytes = FileLength;
+   fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
+   ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
+   // open save file:
+   #ifdef WINDOWS
+   mbstowcs(wtext, dstr, strlen(dstr)+1);
+   flout = CreateFile(wtext, GENERIC_WRITE + GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+   if (flout == INVALID_HANDLE_VALUE) {
+   #else
+   flout = fopen(dstr,"wb");
+   if (flout == NULL) {
+   #endif
+      QMessageBox::critical(this, dstr, "File open error ", QMessageBox::Cancel, QMessageBox::Cancel);
+      ui->errti->setText("Error!");
+	  return 1;
+   }
+   tosave = PartSectorSize*PartSectorsPerCluster ;
+   // get sector(s) to load and next cluster
+   do {
+      FATlookUp(StartCluster, &NextCluster, &FileSector);
+      ReadSectors(FileSector, PartSectorsPerCluster, trasb);
+      if ( RemainingBytes<(PartSectorSize*PartSectorsPerCluster) ) { tosave = RemainingBytes; }
+      #ifdef WINDOWS
+      if (WriteFile(flout, trasb, tosave, &written, NULL)) {
+        msapos = msapos + written;
+      }
+      #else
+      msapos = msapos+fwrite(trasb, 1, tosave, flout);
+      #endif
+      RemainingBytes = RemainingBytes-PartSectorSize*PartSectorsPerCluster;
+      doloop = ( RemainingBytes >= 0 ) && ( NextCluster <= 0xfff0 );
+      if (doloop) {StartCluster = NextCluster;}
+   } while(doloop);
+   if (msapos != FileLength ) {
+      ui->errti->setText("error!");
+      rc = 1;
+   }
+   else if (!timestCur) {
+      SetLocalFileDateTime(fdat, ftim
+                #ifdef WINDOWS
+                , flout
+                #else
+                , dstr
+                #endif
+                );
+   }
+   #ifdef WINDOWS
+   CloseHandle(flout);
+   #else
+   fclose(flout);
+   #endif
+   return rc;
+}
+
+
+void GemdDlg::GetFATFileName(unsigned char* DirBuffer, int EntryPos, char* NameBuffer)
+{
+   unsigned int i, k;
+   
+   for(i=0;i<8;i++) {
+      if (DirBuffer[EntryPos+i] == 32) break ;
+      NameBuffer[i] = DirBuffer[EntryPos+i] ;
+   }
+   if (DirBuffer[EntryPos+8] != 32){
+      NameBuffer[i] = '.' ;
+	  i++ ;
+	  for(k=8;k<11;k++) {
+         if (DirBuffer[EntryPos+k] == 32) { break; }
+         NameBuffer[i] = DirBuffer[EntryPos+k];
+		 i++;
+	  }
+   }
+   NameBuffer[i] = 0 ; // String term.
+   ui->exwht->setText(NameBuffer);
+   ui->errti->setText(" ");
+   QCoreApplication::processEvents();
+}
+bool IsEmpty(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned char o;
+   o = DirBuffer[EntryPos] ;
+   if ( o == 0 ) { return true; }
+   return false;
+}
+bool IsDeleted(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned char o;
+   o = DirBuffer[EntryPos] ;
+   if ( o == 0xE5 ) { return true; }
+   return false;
+}
+bool IsSubDir(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned char o;
+   o = DirBuffer[EntryPos+11] ;
+   if ( (o & 0x10) == 16 ) { return true; }
+   return false;
+}
+bool IsFile(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned char o;
+   o = DirBuffer[EntryPos+11] ;
+   if ((o & 0x18) == 0) { return true; }
+   return false;
+}
+bool IsVolume(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned char o;
+   o = DirBuffer[EntryPos+11] ;
+   if ((o & 0x08) == 8 ) { return true; }
+   return false;
+}
+unsigned int GetFATFileLength(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned int m;
+   m =  DirBuffer[EntryPos+28];
+   m += DirBuffer[EntryPos+29] << 8;
+   m += DirBuffer[EntryPos+30] << 16;
+   m += DirBuffer[EntryPos+31] << 24;
+   return m;
+}
+
+void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Length)
+{
+   DirBuffer[EntryPos+28] = Length;
+   DirBuffer[EntryPos+29] = Length>>8;
+   DirBuffer[EntryPos+30] = Length>>16;
+   DirBuffer[EntryPos+31] = Length>>24;
+}
+
+void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams)
+{
+   unsigned int n;
+   time_t tim ;
+   tm tout;
+   #ifdef WINDOWS
+   tm * trc;
+   #endif
+
+   time(&tim);
+   //struct tm tout;
+   #ifdef WINDOWS
+   if (FileParams == NULL) { trc = localtime(&tim); }
+   else { trc = localtime(&FileParams->st_mtime);}
+   memcpy(&tout, trc, sizeof(tm));
+   #else
+   if (FileParams == NULL){ localtime_r( &tim, &tout); } // Current time for timestamp
+   else { localtime_r( &FileParams->st_mtime, &tout);} // Filetime for timestamp
+   #endif
+   n = (tout.tm_sec/2)|(tout.tm_min<<5)|(tout.tm_hour<<11) ;
+   fatTime = n ;
+   DirBuffer[EntryPos+22] = n;
+   DirBuffer[EntryPos+23] = n>>8;
+   n = (tout.tm_mday)|((tout.tm_mon+1)<<5)|( (tout.tm_year-80)<<9) ;
+   fatDate = n;
+   DirBuffer[EntryPos+24] = n;
+   DirBuffer[EntryPos+25] = n>>8;
+}
+
+void GemdDlg::EraseFile(unsigned char* DirBuffer, int EntryPos)
+{
+   unsigned int StartCluster, NextCluster, FileSector, FileLength, l;
+   bool CheckFileLenght;
+
+   if (DirBuffer[EntryPos] == 0) return;  // Skip empty
+   if (DirBuffer[EntryPos] == 0xE5) return; // Skip deleted
+   StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
+   // free clusters
+   CheckFileLenght = IsFile(DirBuffer, EntryPos);
+   if (CheckFileLenght) { FileLength = GetFATFileLength(DirBuffer, EntryPos); }
+   else { FileLength = 1; }
+   l = 0;
+   do {
+      FATlookUp(StartCluster, &NextCluster, &FileSector);
+      FATfreeCluster(StartCluster);
+      StartCluster = NextCluster;
+      if (CheckFileLenght) { l = l + PartSectorsPerCluster * PartSectorSize; }
+   } while((StartCluster <= 0xfff0) && (l < FileLength));
+   DirBuffer[EntryPos] = 0xE5; // erase Dir entry
+}
+
+void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, unsigned int* StartCluster, bool MakeLocalDir, bool EnterLocalDir)
+{
+   int o;
+
+   pdirpos[PartSubDirLevel] = EntryPos;
+   PartSubDirLevel++;
+   *StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27];
+   //Get dir name:
+   for(o=0;o<11;o++) {
+      NameBuffer[o] = DirBuffer[EntryPos+o] ;
+      subnam[o][PartSubDirLevel] = DirBuffer[EntryPos+o];
+   }
+   NameBuffer[11] = 0 ;
+   if(MakeLocalDir){
+      #ifdef WINDOWS
+      o = mkdir(NameBuffer);
+      #else
+      o = mkdir(NameBuffer,0777);
+      #endif
+   }
+   if (EnterLocalDir) {
+      o = chdir(NameBuffer);
+   }
+   ui->dirLabel->setText(NameBuffer);
+   QCoreApplication::processEvents();
+   LoadDirBuf(StartCluster, DirBuffer);
+}
+
+bool GemdDlg::EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* StartCluster, unsigned int* UpEntryPos, bool ChangeLocalDir) //returns IsRoot
+{
+   int o;
+   unsigned int EntryPos = 32; //".."
+   bool IsRoot = false;
+
+   if (PartSubDirLevel == 0) { //we're already on root level
+      return true;
+   }
+   PartSubDirLevel--;
+   *StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27];
+   //Get dir name:
+   for(o=0;o<11;o++) {
+      NameBuffer[o] = subnam[o][PartSubDirLevel];
+   }
+   NameBuffer[11] = 0 ;
+   ui->dirLabel->setText(NameBuffer);
+   QCoreApplication::processEvents();
+   if (PartSubDirLevel == 0) { //we're on root level = definitely topmost and other handling
+      ReadSectors(PartFirstRootDirSector, PartRootDirSectors, DirBuffer);
+      IsRoot = true;
+   } else {
+      LoadDirBuf(StartCluster, DirBuffer);
+      IsRoot = false;
+   }
+   if(ChangeLocalDir){
+     chdir("..");
+   }
+   *UpEntryPos = pdirpos[PartSubDirLevel];
+   return IsRoot;
+}
+void GemdDlg::on_DeleteFiles_clicked()
+{
+   unsigned int CurrentDirPos;
+   int  DirLevel, listOffset, FileRemainsLevel;
+   char message[256];
 
    if (ui->filesLB->currentRow() < 0) { return; }
+   if ( QMessageBox::warning(this, "Deleting files!",
+                             "You are about to delete files and / or directories.\nThey can not be restored!\n\nAre you sure?",
+                             QMessageBox::Yes | QMessageBox::Cancel) == QMessageBox::Cancel) { return; }
+
+   //QMessageBox::critical(this, "Deleting!", "Deleting", QMessageBox::Cancel);
+
+   listOffset = (PartSubDirLevel > 0) ? 1 : 0;
    setCursor(QCursor(Qt::WaitCursor));
-   reculev    = 0 ;
+   DirLevel   = 0;
+   FileRemainsLevel = 0;
    pdirpos[0] = 0;
-   //Clear sel buffer:
-   //for (s=0;s<256;s++)  selbuf[s] = 0 ;
-
    // Get count of items in listbox
-   int litc = ui->filesLB->count();
-   //selcnt = SendMessage(GetDlgItem(hDlgWnd, GemF), LB_GETSELCOUNT, 0, 0);
-   //if (selcnt == 0) break ;
-   //if (strlen(dir2)>0) SetCurrentDirectory(dir2) ;
-   //SetCursor( jc) ;
-   //k =  SendMessage(GetDlgItem(hDlgWnd, GemF), LB_GETSELITEMS, 256, (LPARAM) selbuf);
-   for (int p=0;p<litc;p++) {
-      bool contPloop = false;
-       // see is item selected:
-      if ( ui->filesLB->item(p)->isSelected()) {
-         dpos = dirpos[p] ; // Position in DIR
-         //avoid VOL extraction
-         o = dirbuf[dpos+11] ;
-         if ( (o & 8) == 8 ) { continue; }
-         msapos = 0 ;
-         //Get filename:
-         for(i=0;i<8;i++) {
-            if (dirbuf[dpos+i] == 32){ break; }
-            dstr[i] = dirbuf[dpos+i] ;
-         }
-         if (dirbuf[dpos+8] != 32) { //==32  goto namegot ;
-            dstr[i] = '.' ;
-            i++ ;
-            for(k=8;k<11;k++) {
-               if (dirbuf[dpos+k] == 32) break ;
-               dstr[i] = dirbuf[dpos+k] ;
-               i++ ;
-            }
-         }   //namegot:
-         dstr[i] = 0 ; // String term.
-         ui->exwht->setText(dstr);
-         ui->errti->setText(" ");
-         QCoreApplication::processEvents();
-         //sleep(1);
-
-         // Recursive subdir extraction
-         // Open SubDir, show files, and extract
+   int litc = ui->filesLB->count()-listOffset;
+   for (int p=0;p<litc;p++) { //step through listed files
+      // see is item selected:
+      if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
+         //ui->filesLB->item(p+listOffset)->setSelected(false);
+         dpos = dirpos[p];// Position in DIR
+         if (IsVolume(dirbuf, dpos)) { continue; }    //avoid VOL extraction
+         GetFATFileName(dirbuf, dpos, dstr);
+         // Recursive subdir extraction Open SubDir, show files, and extract
          // Need to store level, parent & pos in parent
-         o = dirbuf[dpos+11] ;
-         if ( (o & 16) == 16 ) {
+         if (IsSubDir(dirbuf, dpos)) {
+            sprintf(message, "Delete subdirectory %s including all files below?", dstr);
+            if (QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::Cancel) ==  QMessageBox::Cancel){
+               continue; //next entry
+            }
             // Store pos in parent, here by selection number
-            pdirpos[sublev] = p ;
-            sublev++ ; reculev++ ;
-            strcpy(subdnam,dstr) ;
-            staclu = dirbuf[dpos+26]+256*dirbuf[dpos+27] ;
-            //ClunOfParent = staclu ; // Keep this value for SubDIR creation
-            //Get dir name:
-            for(o=0;o<11;o++) {
-               dstr[o] = dirbuf[dpos+o] ;
-               // store SUBdir name
-               subnam[o][sublev] = dirbuf[dpos+o];
-            }
-sublevup:
-            dstr[11] = 0 ;
-            ui->dirLabel->setText(dstr);
-            // Now load it to dirbuf
-            msapos = 0;
-            n = 0;
-            do{  //recfatop2:
-               fatlosn(staclu) ;
-               //load cluster
-               DirClus[n] = logsec;
-               res = loadsecs(logsec, clusec, dirbuf+msapos);
-               if (!res) { break; } //loadsecs always returns True
-               msapos = msapos+clusec*SecSiz ;
-               n++ ;
-               if ( nextf > 0xFFF0 ) { break; } //goto recsubdirf ;
-               staclu = nextf ;
-            }while (msapos<512*98); //goto recfatop2 ;
-            if (!res) { break; } // leave outer loop (loadsecs always returns True)
-            //recsubdirf:
-            CurDirLen = n*clusec ;
-            //Clear following sector for sure
-            for (o=0;o<512;o++) dirbuf[msapos+o] = 0 ;
-            ui->filesLB->clear();
-            //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_RESETCONTENT, 0, 0);  //Empty list
-            // currentPath = QDir::homeDirPath();
-            // currentPath.append("/");
-            getcwd(DestDir,256);
-            // exwht->setText(DestDir); // testing
-            // Change current DIR:
-            // currentPath.append(subdnam);
-            // strcat(DestDir, subdnam) ;
-            // Create that DIR:
-            o = mkdir(subdnam,0777);
-            //o = CreateDirectory(subdnam, 0) ;
-            o = chdir(subdnam);
-            //SetCurrentDirectory(subdnam) ; // Funny
-            // SetDlgItemText(hDlgWnd,exwht,DestDir);  //testing
-            zz = 0 ; // When goes deeper in sub levels
- recbackn:
-            direc = 0 ;
-            for (UINT n=zz;n<SecSiz*dirsec; n=n+32) {
-               bool contNloop = false;
-               if (dirbuf[n] == 0) break ;
-               if (dirbuf[n] == 0xE5) continue ; // Skip deleted
-               if (dirbuf[n] == 0x2E) continue ; // Skip subdir marks
-               // dirpos[direc] = n ; // Store pos (bytewise) in DIR
-               direc++ ;
-               GenerateFileName(dirbuf, n, &qhm);
-               // Put filename in list
-               ui->filesLB->addItem(qhm);
-               //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_ADDSTRING, 0, (LPARAM) dstr);
-               // Highlight it
-               //TODO
-               //SendMessage(GetDlgItem(hDlgWnd, GemF), LB_SETTOPINDEX, direc-1, 0);
-               //UpdateWindow(hDlgWnd) ;
-               // Perform extraction immediately:
-               // But only from position after SubDir if back from SubDir extract
-               //Get filename:
-               for(i=0;i<8;i++) {
-                  if (dirbuf[n+i] == 32) break ;
-                  dstr[i] = dirbuf[n+i] ;
-               }
-               if (dirbuf[n+8] != 32){ // ==32 goto recnamegot ;
-                  dstr[i] = '.' ;
-                  i++ ;
-                  for(k=8;k<11;k++) {
-                     if (dirbuf[n+k] == 32) { break; }
-                     dstr[i] = dirbuf[n+k];
-                     i++;
+            EnterSubDir(dirbuf, dpos, dstr, &staclu, true, true);
+            DirLevel++;
+            CurrentDirPos = 64; // 1st 2 entries of sub dir are '.' and '..'
+            do{
+               bool intoNextSubDir = false;
+               for (UINT n=CurrentDirPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
+                  if (IsEmpty(dirbuf, n)) { break; }
+                  if (IsDeleted(dirbuf, n)) { continue; }
+                  GetFATFileName(dirbuf, n,dstr);
+                  if (IsFile(dirbuf, n)) { //no subdir, it's a file
+                      sprintf(message, "Delete file %s?", dstr);
+                      if (QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::Cancel) ==  QMessageBox::Yes){
+                         EraseFile(dirbuf, n);
+                      } else { FileRemainsLevel = DirLevel; }
+                  }else if (IsSubDir(dirbuf, n)) {
+                     // its a subdir -> store pos in dir, leave n loop
+                     sprintf(message, "Delete subdirectory %s including all files below??", dstr);
+                     if (QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::Cancel) ==  QMessageBox::Yes){
+                        EnterSubDir(dirbuf, n, dstr, &staclu, true, true);
+                        DirLevel++;
+                        intoNextSubDir = true;
+                        break;
+                     } else { FileRemainsLevel = DirLevel; }
                   }
+               }  //n loop end
+               if(intoNextSubDir){ intoNextSubDir = false; continue; }
+               //we are though
+               if (FileRemainsLevel == DirLevel){ //there wss a file left in SubDir
+                  WriteCurrentDirBuf(); //rewrite Dir
                }
-//recnamegot:
-               dstr[i] = 0 ; // String term.
-               ui->exwht->setText(dstr);
-               ui->errti->setText(" ");
-               //SetDlgItemText(hDlgWnd,exwht,dstr);
-               //SetDlgItemText(hDlgWnd,errti," ");
-               //  Sub-SubDir extraction - must reenter
-               o = dirbuf[n+11] ;
-               if ( (o & 16) == 16 ) {
-                  pdirpos[sublev] = n ;   // Store pos in dir
-                  sublev++ ; reculev++ ;
-                  strcpy(subdnam,dstr) ;
-                  staclu = dirbuf[n+26]+256*dirbuf[n+27] ;
-                  //Get dir name:
-                  for(o=0;o<11;o++) {
-                     dstr[o] = dirbuf[n+o] ;
-                     // store SUBdir name
-                     subnam[o][sublev] = dirbuf[n+o];
-                  }
-                  goto sublevup; //awful code style!!!
-               } // !!!!
-               msapos = 0 ;
-               //Now load file from drive/image:
-               staclu = dirbuf[n+26]+256*dirbuf[n+27] ;
-               dirflen = 16777216*dirbuf[n+31]+65536*dirbuf[n+30]+256*dirbuf[n+29]+dirbuf[n+28] ;
-               remain = dirflen; // remain to save
-               fdat = dirbuf[n+24]+256*dirbuf[n+25] ;
-               ftim = dirbuf[n+22]+256*dirbuf[n+23] ;
-               // Open save file:
-               flout = fopen(dstr,"wb");
-               if (flout == NULL) {
-                  QMessageBox::critical(this, dstr, "File open error ", QMessageBox::Cancel, QMessageBox::Cancel);
-                  //MessageBox(NULL, "File open error.", dstr, MB_OK | MB_ICONERROR);
-                  ui->errti->setText("Error!");
-                  sleep(1);
-                  o = 1; // next file
-                  continue;
+               //dir up
+               EnterUpDir(dirbuf, dstr, &staclu, &CurrentDirPos, true);
+               DirLevel--;
+               //do not delete dirs not empty
+               if (FileRemainsLevel <= DirLevel) {
+                  EraseFile(dirbuf, CurrentDirPos); //just mark Clusters as free
                }
-               msapos2 = 0 ;
-               tosave = SecSiz*clusec ;
-               // Get sector(s) to load and next cluster
-               do { //recnextclu:
-                  fatlosn(staclu) ;
-                  res = loadsecs(logsec, clusec, trasb);
-                  if (!res) { //goto recextrer; //loadsecs always returns True
-                     contNloop = true;
-                     break;
-                  }
-                  if ( remain<(SecSiz*clusec) ) { tosave = remain; }
-                  msapos2 = msapos2+fwrite(trasb,1,tosave ,flout);
-                  //msapos = msapos+tosave ;
-                  remain = remain-SecSiz*clusec;
-                  if ( remain<0 ) { break; } //goto recsaveexf;
-                  //msapos = msapos+clusec*512 ;
-                  if ( nextf>0xFFF0 ) { break; } //goto recsaveexf ;
-                  staclu = nextf ;
-               } while(1); //goto recnextclu;
-               //recsaveexf:
-               // res = fwrite(clulist,1,1536,flout); //testing
-               fclose(flout);
-               if ((msapos2 != dirflen ) || contNloop) {
-                  //goto recextrer ; // If not match len
-                  ui->errti->setText("Error!");
-                  sleep(1);
-                  contNloop = false;
+               if (FileRemainsLevel > DirLevel) {FileRemainsLevel = DirLevel; }
+               if (DirLevel == 0) { //we're on topmost level
+                  break;
                }
-               else if (!timestCur) { setFiledt(fdat, ftim); }
-               //recnextfil:    //jump into loop from outside ??!!?? impossible!
-               o = 1;        // next file
-            }  //n loop end
-            // When over, go back to parent DIR
-            sublev-- ; reculev-- ;
-            // Need to set dest DIR, ST Dir name, reload DIR in dirbuf
-            chdir("..");
-            //SetCurrentDirectory("..") ;
-            //TODO ???
-            //o = GetCurrentDirectory(MAX_PATH, DestDir) ;
-            // Back ST dir level:
-            //are we in subdir? :
-            if (dirbuf[0] != 0x2E) { break; }
-            staclu = dirbuf[32+26]+256*dirbuf[32+27] ;
-            // if (staclu == 0 ) goto loadroot ;     //it is root then!!!!!!!****!!!
-            //sublev-- ;
-            for(o=0;o<11;o++){
-               dstr[o] = subnam[o][sublev];
-            }
-            dstr[11] = 0 ;
-            // Print out ST dir:
-            ui->dirLabel->setText(dstr);
-            //SetDlgItemText(hDlgWnd,CurDir,dstr);
-            // Setting back pos:
-            // If back to root:
-            // Need to reload root dir and jump to next pos extract
-            if (!sublev) {
-               //logsec = DirBeg ;
-               //seccnt = dirsec ;
-               res = loadsecs(DirBeg, dirsec, dirbuf);
-               // Error test...!!!!
-               ui->dirLabel->setText("ROOT");
-               //SetDlgItemText(hDlgWnd,CurDir,"ROOT");
-backcontent:
-               ui->filesLB->clear();
-               direc = 0 ;
-               for (UINT n=0;n<SecSiz*dirsec;n = n+32) {
-                  if (dirbuf[n] == 0) break ;
-                  if (dirbuf[n] == 0xE5) continue ; // Skip deleted
-                  if (dirbuf[n] == 0x2E) continue ; // Skip subdir marks
-                  dirpos[direc] = n ; // Store pos (bytewise) in DIR
-                  direc++ ;
-                  GenerateFileName(dirbuf, n, &qhm);
-                  // Put filename in list
-                  ui->filesLB->addItem(qhm);
-                  //  SendMessage(GetDlgItem(hDlgWnd, GemF), LB_ADDSTRING, 0, (LPARAM) dstr);
-                }
-                QCoreApplication::processEvents();
-                continue; //goto nextfil ;
-            }
-            // must reload dirbuf and continue loop
-            msapos = 0;
-            n = 0;
-            do {  //fatop3:
-               fatlosn(staclu) ;
-               //load cluster
-               DirClus[n] = logsec;
-               res = loadsecs(logsec, clusec, dirbuf+msapos);
-               if (!res) { break; } //loadsecs always returns True
-               msapos = msapos+clusec*SecSiz ;
-               n++;
-               if ( nextf>0xFFF0 ) { break; } //goto subdirf3 ;
-               staclu = nextf ;
-            }while (msapos<512*98);// goto fatop3 ;
-            //subdirf3:
-            CurDirLen = n*clusec ;
-            //Clear following sector for sure
-            for (o=0;o<512;o++) { dirbuf[msapos+o] = 0 ; }
-            // Here is dir up, not to root:
-            if (reculev)  {
-               zz = pdirpos[sublev] ;
-               zz = zz+32 ; // to next entry
-               goto recbackn ;  // if not to level of selections!!!
-            }
-            // If to level of selections (not root)
-            goto backcontent ; // continue via root section <-- jump into a closed condition scope!!!
-            // SetDlgItemText(hDlgWnd,exwht,DestDir);  //testing
-            // break ; // testing
-         } // = 16 if end
-         //Now load file from disk/image file:
-         staclu = dirbuf[dpos+26]+256*dirbuf[dpos+27] ;
-         dirflen = 16777216*dirbuf[dpos+31]+65536*dirbuf[dpos+30]+256*dirbuf[dpos+29]+dirbuf[dpos+28] ;
-         remain = dirflen; // remain to save
-         fdat = dirbuf[dpos+24]+256*dirbuf[dpos+25] ;
-         ftim = dirbuf[dpos+22]+256*dirbuf[dpos+23] ;
-         // Open save file:
-         flout = fopen(dstr,"wb");
-         if (flout == NULL) {
-            QMessageBox::critical(this, dstr, "File open error ", QMessageBox::Cancel, QMessageBox::Cancel);
-            continue; ;
+               CurrentDirPos += 32; // point to next entry
+               //are we in subdir? :
+               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
+            }while( PartSubDirLevel > 0);
+            continue; //next main dir entry
          }
-         msapos2 = 0 ;
-         tosave = SecSiz*clusec ;
-         // Get sector(s) to load and next cluster
-         do {  //nextclu:
-            fatlosn(staclu) ;
-            // testing:
-            //   res = loadsecs(logsec, 750, trasb+msapos);
-            //        if (!res) break ;
-            //   goto opensf ;
-            // testing end
-            res = loadsecs(logsec, clusec, trasb);
-            if (!res) { //goto extrer
-               contPloop = true;
-               break;
-            }
-            if ( remain<(SecSiz*clusec) ) { tosave = remain; }
-            msapos2 = msapos2+fwrite(trasb,1,tosave ,flout);
-            //msapos = msapos+tosave ;
-            remain = remain-SecSiz*clusec;
-            if ( remain<0 ) { break; } //goto saveexf;
-            //msapos = msapos+clusec*512 ;
-            if ( nextf>0xFFF0 ) { break; } //goto saveexf ;
-             staclu = nextf ;
-          }while(1); //goto nextclu;
-          // res = fwrite(clulist,1,1536,flout); //testing
-          fclose(flout);
-          if (( msapos2 != dirflen ) || contPloop) { // goto extrer ;
-              ui->errti->setText("Error!");
-              sleep(1);
-              contPloop = false;
-          }
-          else if (!timestCur) { setFiledt(fdat, ftim); }
-       } // if selected end
-    }  // p loop end
+         sprintf(message, "Delete File %s?", dstr);
+         if (QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::Cancel) ==  QMessageBox::Yes){
+            EraseFile(dirbuf, dpos);
+         }
+      } //
+   }  //
+   WriteCurrentDirBuf(); //rewrite Dir
+   //Write FAT back:
+   WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
+   //Second FAT
+   WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
+   // Refresh Used/free indicator:
+   ShowPartitionUsage() ;
+   // Need to refresh listbox content
+   LoadSubDir((PartSubDirLevel == 0), true) ;
+
    setCursor(QCursor(Qt::ArrowCursor));
 }
 
-int PaddFn(char *Instr, char* Outstr)
+void GemdDlg::on_ExtractFiles_clicked()
+{
+   unsigned int CurrentDirPos;
+   int DirLevel, listOffset;
+
+   #ifdef FRANKS_DEBUG
+   strcpy(DestDir, "D:\\Projekte\\tools\\build-DrImg\\testoutput");
+   chdir(DestDir);
+   debug_dirbuf = (unsigned char*)(&dirbuf[64]);
+   if (debug_dirbuf) {};
+   #endif
+
+   if (ui->filesLB->currentRow() < 0) { return; }
+   listOffset = (PartSubDirLevel > 0) ? 1 : 0;
+   setCursor(QCursor(Qt::WaitCursor));
+   DirLevel   = 0 ;
+   pdirpos[0] = 0;
+   // Get count of items in listbox
+   int litc = ui->filesLB->count()-listOffset;
+   for (int p=0;p<litc;p++) { //step through listed files 
+      // see is item selected:
+      if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
+         //ui->filesLB->item(p+listOffset)->setSelected(false);
+         dpos = dirpos[p];// Position in DIR
+         if (IsVolume(dirbuf, dpos)) { continue; }  //avoid VOL extraction
+         GetFATFileName(dirbuf, dpos, dstr);
+         // Recursive subdir extraction Open SubDir, show files, and extract
+         // Need to store level, parent & pos in parent
+         if (IsSubDir(dirbuf, dpos)) {
+            // Store pos in parent, here by selection number
+            EnterSubDir(dirbuf, dpos, dstr, &staclu, true, true);
+            DirLevel++;
+            CurrentDirPos = 64; // 1st 2 entries of sub dir are '.' and '..'
+            do{
+               bool intoNextSubDir = false;
+               for (UINT n=CurrentDirPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
+                  int rc = LoadEntryName(dirbuf, n, false, false);
+                  if (rc == 1) break; //empty entry
+                  if (rc == 2) continue; //deleted entry
+                  GetFATFileName(dirbuf, n, dstr);
+                  if (IsFile(dirbuf, n)) { //no subdir, it's a file
+                     ExtractFile(dirbuf, n);
+                  }else if (IsSubDir(dirbuf, n)) {
+                     // its a subdir -> store pos in dir, leave n loop
+                     EnterSubDir(dirbuf, n, dstr, &staclu, true, true);
+                     DirLevel++;
+                     intoNextSubDir = true;
+                     break;
+                  }
+               }  //n loop end
+               if(intoNextSubDir){ intoNextSubDir = false; continue; }
+               //we are though, dir up
+               EnterUpDir(dirbuf, dstr, &staclu, &CurrentDirPos, true);
+               DirLevel--;
+               if (DirLevel == 0) { //we're on topmost level
+                  break;
+               }
+               CurrentDirPos += 32; // point to next entry
+               //are we in subdir? :
+               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
+            }while( PartSubDirLevel > 0);
+            continue; //next main dir entry
+         }
+         ExtractFile(dirbuf, dpos);
+      } // if selected end
+   }  // p loop end
+   setCursor(QCursor(Qt::ArrowCursor));
+}
+
+int PadFileName(char *Instr, char* Outstr)
 {
    int n, k, c;
    // Look where is .
@@ -998,74 +1165,129 @@ int PaddFn(char *Instr, char* Outstr)
    return 1;
 }
 
-int GetFfds()
+int MakeFATFileName(char* SrcFileName, char* DestFileName)
 {
-   if (sublev==0) fx = 0;
+   int  length, c, k, o, i, p;
+   char curzx[128];
+   char filext[20];
+   char fnamb[128];
+
+   length = strlen(SrcFileName) ;
+   // extract filename only:
+   p = 0;
+   for (c=length-1; c>0; c--)
+      #ifdef WINDOWS
+      if ( SrcFileName[c] == '\\' ) break  ;
+      #else
+      if ( SrcFileName[c] == '/' ) break  ;
+      #endif
+   c++ ;
+   while (c<length)
+   {
+      curzx[p++] = SrcFileName[c++];
+      curzx[p] = 0;
+   }
+   // Convert filename to 8.3 cap format
+   length = strlen(curzx) ;
+   o = 0;
+   i = 0;
+   for (c=0;c<length;c++){
+      k=curzx[c];
+      if (k>64) k = k&0xDF ; // Make all capital
+      if (k==' ') k='_' ; // Space to under
+      if ((!o) && (k=='.')) { o = c;} // get pos of first .
+      if (o) { filext[i] = k; i++; } // build extension
+      fnamb[c] = k ;
+   }
+   fnamb[c] = 0;
+   filext[i]=0;
+   // Limit filename base to 8 length
+   if (o) {
+      fnamb[o] = 0;
+      if (o>8) fnamb[8] = 0 ; // max 8 char
+      if (strlen(filext)>4) filext[4]=0;
+      strcat(fnamb,filext);
+   }
+   else if (length>8) fnamb[8] = 0 ;
+   //exwht->setText(fnamb);
+   return(PadFileName(fnamb, DestFileName));
+}
+
+bool GetFirstFreeDirSlot(unsigned char* DirBuffer, unsigned int* NewEntryPos)
+{
+   unsigned short fx;
+
+   if (PartSubDirLevel==0) fx = 0;
    else fx=64; // By subdir is 2 first slot occupied
-   for ( dpos = fx; dpos<(CurDirLen*SecSiz);dpos=dpos+32) {
-      if (dirbuf[dpos]==0) return 1;
+   for ( *NewEntryPos = fx; *NewEntryPos<(DirCurrentLenght*PartSectorSize);*NewEntryPos=*NewEntryPos+32) {
+      if (DirBuffer[*NewEntryPos]==0) return true;
    }
    //If not found 0 seek E5 for deleted slot:
-   for ( dpos = fx; dpos<(CurDirLen*SecSiz);dpos=dpos+32) {
-      if (dirbuf[dpos]==0xE5) return 1;
+   for ( *NewEntryPos = fx; *NewEntryPos<(DirCurrentLenght*PartSectorSize);*NewEntryPos=*NewEntryPos+32) {
+      if (DirBuffer[*NewEntryPos]==0xE5) return true;
    }
-   return 0 ;
+   return false ;
 }
-int SamNam(char *gs)
+int CheckNameExistsInDir(char* Name, unsigned char* DirBuffer)
 {
-   if (sublev==0) dpos = 0;
-   else dpos=64; // By subdir is 2 first slot occupied
-   for ( fx = dpos; fx<(CurDirLen*SecSiz);fx=fx+32) {
+   unsigned int n, p, fx;
+
+   if (PartSubDirLevel==0) p = 0;
+   else p = 64; // By subdir is 2 first slot occupied
+   for ( fx = p; fx<(DirCurrentLenght*PartSectorSize);fx=fx+32) {
       for (n=0;n<11;n++) {
-         if ( gs[n]!=dirbuf[fx+n]) break;
+         if ( Name[n] != DirBuffer[fx+n]) break;
       }
       if (n==11) return 0; // Same name found
    }
    return 1; // Not found same name
 }
-int SeekFfc()
+unsigned long SeekFirstFreeCluster(void)
 {
-   for( m = 4; m < (2*PartClu+4);  m = m+2 ) {
-      fx = fatbuf[m]+256*fatbuf[m+1] ;
+   int m, fx;
+
+   for( m = 4; m < (2*PartTotalDataClusters+4);  m = m+2 ) {
+      fx = PartFATbuffer[m]+256*PartFATbuffer[m+1] ;
       if ( fx == 0 ) break  ; // free cluster
    }
-   if ( m==(2*PartClu+4) ) return 0 ; // Not found
-   m = m/2 ; // This is first free cluster #
-   return 1;
+   if ( m ==(2*PartTotalDataClusters+4) ) return INVALID_VALUE ; // Not found
+   return m/2 ; // This is first free cluster #
 }
-void MarkCluL(ULONG clun)
+
+unsigned long SeekNextFreeCluster(unsigned long StartCluster)
 {
-   clun = clun*2 ;
-   fatbuf[clun]= 255;
-   fatbuf[clun+1]= 255;
-}
-void MarkCluR(ULONG clun, ULONG oldclun)
-{
-   oldclun = oldclun*2 ;
-   fatbuf[oldclun]= clun;
-   fatbuf[oldclun+1]= clun>>8;
-}
-int SeekNfc(ULONG ne)
-{
-   ne = 2*ne+2 ; // Twice cluster # and go ahead to next
-   for( m = ne; m < (2*PartClu+4);  m = m+2 )
+   unsigned long m, fx, ne;
+
+   ne = 2 * StartCluster + 2 ; // Twice cluster # and go ahead to next
+   for( m = ne; m < (2*PartTotalDataClusters+4);  m = m+2 )
    {
-      fx = fatbuf[m]+256*fatbuf[m+1] ;
+      fx = PartFATbuffer[m]+256*PartFATbuffer[m+1] ;
       if ( fx == 0 ) break  ; // free cluster
    }
-   if ( m==(2*PartClu+4) ) { m=m/2; return 0 ; } // Not found
-   m = m/2 ; // This is first free cluster #
-   return 1;
+   if ( m==(2*PartTotalDataClusters+4) ) { m=m/2; return INVALID_VALUE; } // Not found
+   return m/2 ; // This is first free cluster #
 }
+
+void MarkCluster(unsigned long Cluster, unsigned long PointsTo)
+{
+   Cluster = Cluster*2 ;
+   PartFATbuffer[Cluster]= PointsTo;
+   PartFATbuffer[Cluster+1]= PointsTo >> 8;
+}
+
+
 int MakeSubF(UINT Clun) // Create start cluster of subdirectory
 {
+   int n;
+   unsigned int FileSector;
+
    // Calculate logical sector by cluster #
-   logsec = FdatS+(Clun-2)*clusec ;
+   FileSector = PartHeadSectors+(Clun-2)*PartSectorsPerCluster ;
    // Create content:
    // First clear:
-   for (UINT n=0; n<(SecSiz*clusec); n++) trasb[n]=0 ;
+   for (UINT i=0; i<(PartSectorSize*PartSectorsPerCluster); i++) trasb[i]=0 ;
    trasb[0] = 0x2E ;
-   for (UINT n =1; n<11;n++ ) trasb[n] = ' ' ;
+   for (UINT i =1; i<11;i++ ) trasb[i] = ' ' ;
    trasb[11] = 16 ; // SubDir flag
    n = fatTime ;
    trasb[22] = n;
@@ -1080,218 +1302,159 @@ int MakeSubF(UINT Clun) // Create start cluster of subdirectory
    trasb[33] = 0x2E ;
    for (UINT n =34;n<32+11;n++ ) trasb[n] = ' ' ;
    trasb[43] = 16 ; // SubDir flag
-   n = ClunOfParent ; //!!! zero if parent is ROOT
+   n = ClunOfParent ; //!!!!!!! zero if parent is ROOT
    trasb[26+32] = n;
    trasb[27+32] = n>>8; // Start cluster of parent
    // Write it to drive or image:
-   UINT result = writsecs( logsec, clusec, trasb);
+   UINT result = WriteSectors( FileSector, PartSectorsPerCluster, trasb);
    /*
-   if ( res != (clusec*512) )   {
+   if ( res != (PartSectorsPerCluster*512) )   {
       MessageBox(hDlgWnd, "Write error!", "Problem",
       MB_OK | MB_ICONSTOP);
    }
    */
-   if ( result != (clusec*512)) { return 0;}
+   if ( result != (PartSectorsPerCluster*512)) { return 0;}
    return 1;
 }
 
-void GemdDlg::on_addfP_clicked()
+bool GemdDlg::AddFileToCurrentDir(char* FilePathName, unsigned char* DirBuffer)
 {
-   // 1. Multiple file selector
-   // 2. Process by files
-   // 3. Get file's length and check is enough space
-   // 4. Convert filename to 8.3 Capitals
-   // 5. Check is name exists
-   // etc....
-    char zxpath[256];
-    char curzx[128];
-    int  zxpal, p;
-    char filext[20];
-    char fnamb[128];
-    bool dowrite = true;
+   char   FATFileName[256];
+   struct stat fparms ;
+   unsigned int FileByteLength;
+   unsigned int n, m, FileClusterCount, EntryPos, FileSector, CurrentFileCluster, PreviousFileCluster;
+   FILE *inFile;
+
+   MakeFATFileName(FilePathName, FATFileName);
+   ui->exwht->setText(FATFileName);   // show corrected filename
+   QCoreApplication::processEvents();
+   //sleep(1); //testing
+   // Open file and get it's length:
+   // Ignore directories:
+   stat( FilePathName , &fparms );
+   if (S_IFDIR & fparms.st_mode ) { return(true); } //Frank !!!!!!!!!
+   inFile = fopen(FilePathName, "rb");
+   if (inFile == NULL) {
+      QMessageBox::critical(this, tr("File open error"), FilePathName, QMessageBox::Cancel, QMessageBox::Cancel);
+      return(false);
+   }
+   //get filelength :
+   fseek(inFile, 0, SEEK_END) ;
+   FileByteLength = ftell(inFile); //Filelength got
+   fseek(inFile,0,SEEK_SET); // Back to filestart dude!
+   // Get needed cluster count:
+   n = PartSectorsPerCluster*PartSectorSize;
+   FileClusterCount = FileByteLength/n ;
+   if ( FileByteLength % n) FileClusterCount++ ;
+   // Check is there enough space:
+   if ( GetFreeClusters() < FileClusterCount ) {
+      QMessageBox::critical(this, tr("No place for file"), FilePathName, QMessageBox::Cancel, QMessageBox::Cancel);
+      fclose(inFile);
+      return(false);
+   }
+   // Is name already in cur DIR?
+   res = CheckNameExistsInDir(FATFileName, dirbuf) ;
+   if (!res) {
+      QMessageBox::critical(this, tr("Name exists!"), "Name already in Dir.", QMessageBox::Cancel, QMessageBox::Cancel);
+      fclose(inFile);
+      return(false);
+   }
+   // Now seek first free slot in DIR:
+   if (!GetFirstFreeDirSlot(DirBuffer, &EntryPos)) {
+      QMessageBox::critical(this, tr("Directory full!"), "Error", QMessageBox::Cancel, QMessageBox::Cancel);
+      fclose(inFile);
+      return(false);
+   }
+   // Copy name at EntryPos, add timestamp and directory flag
+   for (n=0;n<11;n++) DirBuffer[EntryPos+n]=FATFileName[n];
+   //Enter filelength in filerecord:
+   SetFATFileLength(DirBuffer, EntryPos, FileByteLength);
+   SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? NULL : &fparms);
+   // Set start cluster #
+   // Seek first free cluster
+   CurrentFileCluster = SeekFirstFreeCluster(); //we have already checked - there are definitely enough free ones
+   n = CurrentFileCluster;
+   DirBuffer[EntryPos+26] = n;    //write 1st FileCluster to DirEntry
+   DirBuffer[EntryPos+27] = n>>8;
+   //Copy FileSectors in order:
+   if ( (FileByteLength)<(PartSectorsPerCluster*PartSectorSize) )  {
+      k = FileByteLength ;
+      // First clear:
+      for ( UINT n=0;n<(PartSectorSize*PartSectorsPerCluster);n++) trasb[n]=0 ; // clear trasb for have zeros after file end
+   }
+   else { k =  PartSectorsPerCluster*PartSectorSize; }
+   res=fread(trasb,1,k,inFile);
+   FileSector = PartHeadSectors+(CurrentFileCluster-2) * PartSectorsPerCluster;
+   WriteSectors(FileSector, PartSectorsPerCluster, trasb);
+
+   // if only 1 cluster mark it as last:
+   if (FileClusterCount==1) {
+      MarkCluster(CurrentFileCluster, LAST_CLUSTER);
+   }
+   else {
+      unsigned int msapos = PartSectorsPerCluster*PartSectorSize;
+      o = 0 ; //flag
+      for (UINT n=1; n<FileClusterCount; n++)
+      {
+         if ( (FileByteLength-msapos)<(PartSectorsPerCluster*PartSectorSize) ) {
+            k = FileByteLength-msapos ;
+            for (UINT i=0;i<(PartSectorSize*PartSectorsPerCluster);i++) { trasb[i]=0; } // clear trasb for have zeros after file end
+            o = 1; // flag for last cluster
+         }
+         else { k = PartSectorsPerCluster*PartSectorSize; }
+         res=fread(trasb,1,k,inFile);
+         PreviousFileCluster = CurrentFileCluster;
+         if ((CurrentFileCluster = SeekNextFreeCluster(CurrentFileCluster)) == INVALID_VALUE)
+         {
+             MarkCluster(PreviousFileCluster, LAST_CLUSTER) ; break ;
+         } // Error message?
+         // write into FAT
+         MarkCluster(PreviousFileCluster, CurrentFileCluster);
+         if ( o ) MarkCluster(CurrentFileCluster, LAST_CLUSTER) ;
+         //PreviousFileCluster = m;
+         FileSector = PartHeadSectors+(CurrentFileCluster - 2)*PartSectorsPerCluster ;
+         WriteSectors( FileSector, PartSectorsPerCluster, trasb);
+         msapos = msapos+PartSectorSize*PartSectorsPerCluster ;
+      }
+   }
+   fclose(inFile);
+   // Write parent DIR with new entry to drive/image:
+   // need to get pos first (to write 1 cluster only):
+   n = EntryPos/(PartSectorSize*PartSectorsPerCluster);
+   if ( PartSubDirLevel == 0 ) WriteSectors( PartFirstRootDirSector+n*PartSectorsPerCluster, PartSectorsPerCluster, DirBuffer);
+   else  {
+      m = n * PartSectorsPerCluster*PartSectorSize;
+      WriteSectors( DirCurrentClustes[n], PartSectorsPerCluster, DirBuffer + m);
+   }
+   return(true);
+}
+
+
+void GemdDlg::on_AddFiles_clicked()
+{
+   char FilePathName[256];
 
    // Multiple file open dialQFileDialogog:
-    QStringList SeldFiles = QFileDialog::getOpenFileNames(this, tr("Files to load"), NULL, "ST PRG, TOS, TTP, APP files (*.prg *.tos *.ttp *.app);;Binary files(*.bin);;All files(*.*)");
-    //SeldFiles = KFileDialog::getOpenFileNames(0, i18n("*.prg *.tos *.ttp *.app|ST PRG, TOS, TTP, APP files\n*.bin|Bin files\n*.* *|All files"), this, i18n("Files to add"));
+   QStringList SeldFiles = QFileDialog::getOpenFileNames(this, tr("Files to load"), NULL, "ST PRG, TOS, TTP, APP files (*.prg *.tos *.ttp *.app);;Binary files(*.bin);;All files(*.*)");
    if(!SeldFiles.isEmpty())  {
-      struct stat fparms ;
-      time_t tim ;
-      tm tout;
 
       QCoreApplication::processEvents(); // refresh dialog content
       setCursor(QCursor(Qt::WaitCursor));
 
       for (QStringList::Iterator iq = SeldFiles.begin(); iq != SeldFiles.end(); ++iq)
       {
-         //QByteArray qchar_array = iq.toLatin1();
          //const char *c_char = qchar_array.data();
-         strcpy(zxpath, (char*)iq->toLatin1().data());   // Filename with path?
-         zxpal = strlen(zxpath) ;
-         // extract filename only:
-         p = 0;
-         for (c=zxpal-1; c>0; c--)
-            if ( zxpath[c] == '/' ) break  ;
-         c++ ;
-         while (c<zxpal)
-         { curzx[p++] = zxpath[c++];
-                 //p++ ; c++ ;
-         curzx[p] = 0;
-         }
-         // Convert filename to 8.3 cap format
-         zxpal = strlen(curzx) ;
-         o = 0;
-         i = 0;
-         for (c=0;c<zxpal;c++){
-            k=curzx[c];
-            if (k>64) k = k&0xDF ; // Make all capital
-            if (k==' ') k='_' ; // Space to under
-            if ((!o) && (k=='.')) { o = c;} // get pos of first .
-            if (o) { filext[i] = k; i++; } // build extension
-            fnamb[c] = k ;
-         }
-         fnamb[c] = 0;
-         filext[i]=0;
-         // Limit filename base to 8 length
-         if (o) {
-            fnamb[o] = 0;
-            if (o>8) fnamb[8] = 0 ; // max 8 char
-            if (strlen(filext)>4) filext[4]=0;
-            strcat(fnamb,filext);
-         }
-         else if (zxpal>8) fnamb[8] = 0 ;
-         //exwht->setText(fnamb);
-         res = PaddFn(fnamb, dstr) ;
-         ui->exwht->setText(dstr);   // show corrected filename
-         QCoreApplication::processEvents();
-         //sleep(1); //testing
-         // Open file and get it's length:
-         // Ignore directories:
-         stat( zxpath , &fparms );
-         if (S_IFDIR & fparms.st_mode ) { break; }
-         finp = fopen(zxpath,"rb");
-         if (finp == NULL) {
-            QMessageBox::critical(this, tr("File open error"), zxpath, QMessageBox::Cancel, QMessageBox::Cancel);
-            break;
-         }
-         //get filelength :
-         fseek(finp, 0, SEEK_END) ;
-         stfilelen = ftell(finp); //Filelength got
-         fseek(finp,0,SEEK_SET); // Back to filestart dude!
-         // Get needed cluster count:
-         n = clusec*SecSiz;
-         fileClucnt = stfilelen/n ;
-         if ( stfilelen % n) fileClucnt++ ;
-         // Check is there enough space:
-         if ( pfrec<fileClucnt ) {
-            QMessageBox::critical(this, tr("No place for file"), zxpath, QMessageBox::Cancel, QMessageBox::Cancel);
-            fclose(finp);
-            dowrite = false;
-            break; //goto addfend;
-         }
-         // Is name already in cur DIR?
-         res = SamNam(dstr) ;
-         if (!res) {
-            QMessageBox::critical(this, tr("Name exists!"), "Name already in Dir.", QMessageBox::Cancel, QMessageBox::Cancel);
-            fclose(finp);
-            dowrite = false;
-            break; //goto addfend;
-         }
-         // Now seek first free slot in DIR:
-         res = GetFfds() ;
-         if (!res) {
-            QMessageBox::critical(this, tr("Directory full!"), "Error", QMessageBox::Cancel, QMessageBox::Cancel);
-            fclose(finp);
-            dowrite = false;
-            break; //goto addfend;
-         }
-         // Copy name at dpos, add timestamp and directory flag
-         for (n=0;n<11;n++) dirbuf[dpos+n]=dstr[n];
-         //Enter filelength in filerecord:
-         m = stfilelen;
-         dirbuf[dpos+28] = m;
-         dirbuf[dpos+29] = m>>8;
-         dirbuf[dpos+30] = m>>16;
-         dirbuf[dpos+31] = m>>24;
-         // Add timestamp:
-         //time_t tim ;
-         time(&tim);
-         //struct tm tout;
-         if (timestCur) localtime_r( &tim, &tout); // Current time for timestamp
-         else localtime_r( &fparms.st_mtime, &tout); // Filetime for timestamp
-         n = (tout.tm_sec/2)|(tout.tm_min<<5)|(tout.tm_hour<<11) ;
-         fatTime = n ;
-         //qhm.setNum(fileClucnt);
-         //errti->setText(qhm); //testing
-         dirbuf[dpos+22] = n;
-         dirbuf[dpos+23] = n>>8;
-         n = (tout.tm_mday)|((tout.tm_mon+1)<<5)|( (tout.tm_year-80)<<9) ;
-         fatDate = n;
-         dirbuf[dpos+24] = n;
-         dirbuf[dpos+25] = n>>8;
-         //Set start cluster #
-         // Seek first free cluster
-         SeekFfc() ;
-         n = m;
-         dirbuf[dpos+26] = n;
-         dirbuf[dpos+27] = n>>8;
-         //Copy fileclusters in order:
-         msapos = 0; // pos in file
-         if ( (stfilelen)<(clusec*SecSiz) )  {
-            k = stfilelen ;
-            // First clear:
-            for ( UINT n=0;n<(SecSiz*clusec);n++) trasb[n]=0 ; // clear trasb for have zeros after file end
-         }
-         else { k =  clusec*SecSiz; }
-         res=fread(trasb,1,k,finp);
-         logsec = FdatS+(m-2)*clusec ;
-         writsecs( logsec, clusec, trasb);
-
-         // if only 1 cluster mark it as last:
-         if (fileClucnt==1) {
-            MarkCluL(m) ;
-         }
-         else {
-            msapos = clusec*SecSiz;
-            o = 0 ; //flag
-            for (UINT n=1; n<fileClucnt; n++)
-            {
-               if ( (stfilelen-msapos)<(clusec*SecSiz) ) {
-                  k = stfilelen-msapos ;
-                  for (UINT i=0;i<(SecSiz*clusec);i++) { trasb[i]=0; } // clear trasb for have zeros after file end
-                  o = 1; // flag for last cluster
-               }
-               else { k = clusec*SecSiz; }
-               res=fread(trasb,1,k,finp);
-               oldclun = m;
-               if (!SeekNfc(m) ) { MarkCluL(oldclun) ; break ;} // Error message?
-               // write into FAT
-               MarkCluR(m, oldclun);
-               if ( o ) MarkCluL(m) ;
-               //oldclun = m;
-               logsec = FdatS+(m-2)*clusec ;
-               writsecs( logsec, clusec, trasb);
-               msapos = msapos+SecSiz*clusec ;
-            }
-         }
-         fclose(finp);
-         // Write parent DIR with new entry to drive/image:
-         // need to get pos first (to write 1 cluster only):
-         n = dpos/(SecSiz*clusec) ;
-         if ( sublev == 0 ) writsecs( DirBeg+n*clusec, clusec, dirbuf);
-         else  {
-            writsecs( DirClus[n], clusec, dirbuf);
-         }
+         strcpy(FilePathName, (char*)iq->toLatin1().data());   // Filename with path?
+         if (!AddFileToCurrentDir(FilePathName, dirbuf)) { break; }
       } // iq for loop end
-      if (dowrite) {
-         //Finally write FAT back:
-         writsecs( ResSec, fatsec, fatbuf);
-         //Second FAT
-         writsecs( ResSec+fatsec, fatsec, fatbuf);
-         // Refresh Used/free indicator:
-         ShowUF() ;
-         // Need to refresh listbox content
-         subdl() ;
-      }
+      //Finally write FAT back:
+      WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
+      //Second FAT
+      WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
+      // Refresh Used/free indicator:
+      ShowPartitionUsage() ;
+      // Need to refresh listbox content
+      LoadSubDir((PartSubDirLevel == 0), true) ;
    } // if Seldfiles end
    setCursor(QCursor(Qt::ArrowCursor))    ;
 }
@@ -1308,6 +1471,9 @@ void GemdDlg::on_newfP_clicked()
    //  7. Rewrite medias DIR and FAT sectors!!!
    //  8. Refresh ListBox with DIR content
    //  9. Refresh Used/Free info at bottom
+   int m,n;
+   unsigned int FileSector, EntryPos;
+
    QString litet = ui->dirED->text();
    //GetDlgItemText(hDlgWnd, GemCreD , szText , (LPARAM) 64);
    if ( litet.length() == 0 ){
@@ -1324,7 +1490,7 @@ void GemdDlg::on_newfP_clicked()
       return;
    }
    strcpy(subdnam,(char*)litet.toLatin1().data());
-   res = PaddFn(subdnam, dstr) ;
+   res = PadFileName(subdnam, dstr) ;
    if (!res) {
       QMessageBox::critical(this, tr("Invalid filename!"), tr("Must have dot before ext."), QMessageBox::Cancel, QMessageBox::Cancel);
       return;
@@ -1332,96 +1498,98 @@ void GemdDlg::on_newfP_clicked()
    // Testing
    ui->exwht->setText(dstr);
    // On free cluster at least needed
-   if ( pfrec<1 ) {
+   if ( GetFreeClusters() < 1 ) {
      QMessageBox::critical(this, tr("Partition full!"), tr("No place"), QMessageBox::Cancel, QMessageBox::Cancel);
      return;
    }
-   res = SamNam(dstr) ;
+   res = CheckNameExistsInDir(dstr, dirbuf) ;
    if (!res) {
       QMessageBox::critical(this, tr("Name exists!"), tr("Name already in Dir."), QMessageBox::Cancel, QMessageBox::Cancel);
       return;
    }
    // Now seek first free slot in DIR:
-   res = GetFfds() ;
-   if (!res) {
-     QMessageBox::critical(this, tr("DIR full!"), tr("Error"), QMessageBox::Cancel, QMessageBox::Cancel);
-    return;
+   if (!GetFirstFreeDirSlot(dirbuf, &EntryPos)){
+      QMessageBox::critical(this, tr("DIR full!"), tr("Error"), QMessageBox::Cancel, QMessageBox::Cancel);
+      return;
    }
-   // Copy name at dpos, add timestamp and directory flag
-   for (n=0;n<11;n++) dirbuf[dpos+n]=dstr[n];
-   dirbuf[dpos+11]=16; // DIR flag
+   // Copy name at EntryPos, add timestamp and directory flag
+   for (n=0;n<11;n++) dirbuf[EntryPos+n]=dstr[n];
+   dirbuf[EntryPos+11]=16; // DIR flag
    // Add timestamp:
    time_t tim ;
+   struct tm tout;
+   #ifdef WINDOWS
+   tm * trc;
+   #endif
+
    //tim = time(NULL);
    time(&tim);
-   struct tm tout;
+   #ifdef WINDOWS
+   trc = localtime(&tim);
+   memcpy(&tout, trc, sizeof(tm));
+   #else
    localtime_r( &tim, &tout);
-   //res = SystemTimeToFileTime( &syt, &fit) ;
-   //res = FileTimeToDosDateTime(
-   //      &fit,   // pointer to 64-bit file time
-   //&FatDate,   // pointer to variable for MS-DOS date
-   //&FatTime    // pointer to variable for MS-DOS time
-   //            );
-   // itoa(FatDate,dstr,10);
+   #endif
    //SetDlgItemText(hDlgWnd,exwht,dstr); // Testing
    n = (tout.tm_sec/2)|(tout.tm_min<<5)|(tout.tm_hour<<11) ;
    fatTime = n ;
    qhm.setNum(n);
    ui->errti->setText(qhm); //testing
-   dirbuf[dpos+22] = n;
-   dirbuf[dpos+23] = n>>8;
+   dirbuf[EntryPos+22] = n;
+   dirbuf[EntryPos+23] = n>>8;
    //n = int(FatDate) ;
    n = (tout.tm_mday)|((tout.tm_mon+1)<<5)|( (tout.tm_year-80)<<9) ;
    fatDate = n;
-   dirbuf[dpos+24] = n;
-   dirbuf[dpos+25] = n>>8;
+   dirbuf[EntryPos+24] = n;
+   dirbuf[EntryPos+25] = n>>8;
    //Set start cluster #
    // Seek first free cluster
-   SeekFfc() ;
+   m = SeekFirstFreeCluster(); //we have already checked - there are definitely enough free ones
    n = m;
-   dirbuf[dpos+26] = n;
-   dirbuf[dpos+27] = n>>8;
+   dirbuf[EntryPos+26] = n;
+   dirbuf[EntryPos+27] = n>>8;
    credirClu[0] = m ; // store spread of created
    credirCnt = 1;
    // seek for next 15 free cluster:
    oldclun = m;
-   n = SecSiz>>9 ;
-   while ( credirCnt<(32/(clusec*n)) ) {
-      if (!SeekNfc(m) ) break ;
+   n = PartSectorSize>>9 ;
+   while ( credirCnt<(32/(PartSectorsPerCluster*n)) ) {
+      if ((m = SeekNextFreeCluster(m)) == INVALID_VALUE) break ;
       credirClu[credirCnt] = m ;
       // write into FAT
-      MarkCluR(m, oldclun);
+      MarkCluster(oldclun, m);
       credirCnt++ ;
       oldclun = m;
    }
    // mark as last:
-   MarkCluL(oldclun) ;
+   MarkCluster(oldclun, LAST_CLUSTER) ;
    // Write parent DIR with new entry to drive/image:
-   if ( sublev == 0 ) { writsecs( DirBeg, dirsec, dirbuf); }
+   if ( PartSubDirLevel == 0 ) { WriteSectors( PartFirstRootDirSector, PartRootDirSectors, dirbuf); }
    else  {
       // need to get pos first:
-      n = dpos/(SecSiz*clusec) ;
-      writsecs( DirClus[n], clusec, dirbuf);
+      n = EntryPos/(PartSectorSize*PartSectorsPerCluster) ;
+      m = n * PartSectorsPerCluster*PartSectorSize;
+      WriteSectors( DirCurrentClustes[n], PartSectorsPerCluster, dirbuf + m);
    }
    // Create and write empty SubDir:
    // first cluster of:
    MakeSubF(credirClu[0]);
    // First clear:
-   for (UINT n=0;n<(SecSiz*clusec);n++){ trasb[n]=0; }
+   for (UINT n=0;n<(PartSectorSize*PartSectorsPerCluster);n++){ trasb[n]=0; }
    // clear following clusters of DIR:
    for (UINT i=1;i<credirCnt;i++) {
       // Calculate logical sector by cluster #
-      logsec = FdatS+(credirClu[i]-2)*clusec ;
-      res = writsecs( logsec, clusec, trasb);
+      FileSector = PartHeadSectors+(credirClu[i]-2)*PartSectorsPerCluster ;
+      res = WriteSectors( FileSector, PartSectorsPerCluster, trasb);
    }
    //Write FAT back:
-   writsecs( ResSec, fatsec, fatbuf);
+   WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
    //Second FAT
-   writsecs( ResSec+fatsec, fatsec, fatbuf);
+   WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
    // Refresh Used/free indicator:
-   ShowUF() ;
+   ShowPartitionUsage() ;
    // Need to refresh listbox content
-   subdl() ;
+   LoadSubDir(false, true) ;
 }
 
 
