@@ -702,7 +702,6 @@ void SetLocalFileDateTime(int fdate, int ftime, char* FileName)
     DosDateTimeToFileTime(fdate, ftime, &fildt);
     SetFileTime(fHandle, &fildt, &fildt, &fildt);
     #else
-    //if (fHandle) {};
     tout.tm_sec  = (ftime & 0x1F) << 1;
     tout.tm_min  = (ftime>>5) & 0x3F ;
     tout.tm_hour = (ftime>>11) & 0x1F ;
@@ -1082,11 +1081,7 @@ void GemdDlg::on_ExtractFiles_clicked()
    int DirLevel, listOffset;
 
    #ifdef FRANKS_DEBUG
-   #ifdef WINDOWS
    strcpy(DestDir, "D:\\Projekte\\tools\\build-DrImg\\testoutput");
-   #else
-   strcpy(DestDir, "/home/frank/Projekte/ATARI/build-DrImg-Desktop-Debug/testoutput/");
-   #endif
    chdir(DestDir);
    debug_dirbuf = (unsigned char*)(&dirbuf[64]);
    if (debug_dirbuf) {};
