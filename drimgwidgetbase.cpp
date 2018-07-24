@@ -18,10 +18,8 @@
  *   Free Software Foundation, Inc.,                                       *
  *   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
  ***************************************************************************/
-
 #include "drimgwidgetbase.h"
 #include "ui_drimgwidgetbase.h"
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -97,6 +95,9 @@ drimgwidgetbase::drimgwidgetbase(QWidget *parent) :
     ui(new Ui::drimgwidgetbase)
 {
     ui->setupUi(this);
+    #ifdef FRANKS_DEBUG
+    on_openIfButton_clicked();
+    #endif
 }
 
 drimgwidgetbase::~drimgwidgetbase()
@@ -128,7 +129,11 @@ void drimgwidgetbase::detSD()
  int drih, e;
  unsigned long long drisize;
 
+#ifdef WINDOWS
+ drih = _open(devStr,  O_RDONLY) ;
+#else
  drih = open(devStr,  O_RDONLY | O_NONBLOCK) ;
+#endif
  if (drih>0) {
 
    drisize = lseek64( drih, 0,  SEEK_END );
@@ -628,6 +633,14 @@ void drimgwidgetbase::on_readButton_clicked()
 void drimgwidgetbase::on_openIfButton_clicked()
 {
     if (act) { return; }
+    #ifdef FRANKS_DEBUG
+    {
+      #ifdef WINDOWS
+      fout = fopen("D:\\Projekte\\tools\\DrImg\\testimage.img","rb");
+      #else
+      fout = fopen("/home/frank/Projekte/ATARI/DrImg/testimage.img","rb");
+      #endif
+    #else
     getForm();
     if (form == 0) {
         fileName = QFileDialog::getOpenFileName(this, "File to load", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)"); }
@@ -636,6 +649,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
     if( !fileName.isEmpty() )
     {
       fout = fopen((char*)fileName.toLatin1().data(),"rb");
+    #endif
       if (fout == NULL) {
           QMessageBox::critical(this, "File open error.", "File open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
           return;
@@ -647,7 +661,16 @@ void drimgwidgetbase::on_openIfButton_clicked()
       fseek(fout, 0, SEEK_END) ;
       filelen = ftell(fout); //Filelength got
       fclose(fout);
+      #ifdef FRANKS_DEBUG
+      #ifdef WINDOWS
+      strcpy(loadedF, "D:\\Projekte\\tools\\DrImg\\testimage.img");
+      #else
+      strcpy(loadedF, "/home/frank/Projekte/ATARI/DrImg/testimage.img");
+      #endif
+      #else
       strcpy(loadedF, (char*)fileName.toLatin1().data());
+      #endif
+
       ui->inf1Label->setText( "File selected" );
       selected = 99; //flag
       // Get here CHS from hdf header if...

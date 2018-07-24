@@ -23,7 +23,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>Drive Imaging, file transfer &amp; partition extract  V 0.86  PP 2006-7</string>
+   <string>Drive Imaging, file transfer &amp; partition extract  V 0.91  PP 2006-7; FH 2018</string>
   </property>
   <property name="windowIcon">
    <iconset resource="gemdlgimages.qrc">

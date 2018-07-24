@@ -96,9 +96,9 @@
   <widget class="QLabel" name="textLabel1_2">
    <property name="geometry">
     <rect>
-     <x>380</x>
+     <x>359</x>
      <y>360</y>
-     <width>100</width>
+     <width>121</width>
      <height>20</height>
     </rect>
    </property>
@@ -114,7 +114,7 @@
     <rect>
      <x>270</x>
      <y>360</y>
-     <width>103</width>
+     <width>81</width>
      <height>20</height>
     </rect>
    </property>
@@ -195,11 +195,11 @@
     <bool>false</bool>
    </property>
   </widget>
-  <widget class="QPushButton" name="extrP">
+  <widget class="QPushButton" name="ExtractFiles">
    <property name="geometry">
     <rect>
-     <x>340</x>
-     <y>230</y>
+     <x>270</x>
+     <y>220</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -228,7 +228,7 @@
    <property name="geometry">
     <rect>
      <x>270</x>
-     <y>160</y>
+     <y>150</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -273,11 +273,11 @@
     </font>
    </property>
   </widget>
-  <widget class="QPushButton" name="dirupP">
+  <widget class="QPushButton" name="DeleteFiles">
    <property name="geometry">
     <rect>
-     <x>340</x>
-     <y>160</y>
+     <x>410</x>
+     <y>220</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -293,7 +293,7 @@
    </property>
    <property name="icon">
     <iconset>
-     <normaloff>Icons/DirUp.png</normaloff>Icons/DirUp.png</iconset>
+     <normaloff>Icons/DeleteFiles.png</normaloff>Icons/DeleteFiles.png</iconset>
    </property>
    <property name="iconSize">
     <size>
@@ -309,7 +309,7 @@
    <property name="geometry">
     <rect>
      <x>410</x>
-     <y>160</y>
+     <y>150</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -348,20 +348,21 @@
    </property>
    <property name="font">
     <font>
-     <family>Monospace</family>
-     <weight>50</weight>
-     <bold>false</bold>
+     <family>DejaVu Sans Mono</family>
+     <pointsize>10</pointsize>
+     <weight>75</weight>
+     <bold>true</bold>
     </font>
    </property>
    <property name="selectionMode">
     <enum>QAbstractItemView::MultiSelection</enum>
    </property>
   </widget>
-  <widget class="QPushButton" name="addfP">
+  <widget class="QPushButton" name="AddFiles">
    <property name="geometry">
     <rect>
-     <x>410</x>
-     <y>230</y>
+     <x>340</x>
+     <y>220</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -392,8 +393,8 @@
   <widget class="QPushButton" name="newfP">
    <property name="geometry">
     <rect>
-     <x>270</x>
-     <y>230</y>
+     <x>340</x>
+     <y>150</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -518,14 +519,14 @@
    </hints>
   </connection>
   <connection>
-   <sender>dirupP</sender>
+   <sender>DeleteFiles</sender>
    <signal>clicked(int,int)</signal>
    <receiver>GemdDlg</receiver>
    <slot>dirupP_clicked(int,int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>410</x>
+     <y>220</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -540,8 +541,8 @@
    <slot>opdirP_clicked(int,int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>270</x>
+     <y>150</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -550,14 +551,14 @@
    </hints>
   </connection>
   <connection>
-   <sender>extrP</sender>
+   <sender>ExtractFiles</sender>
    <signal>clicked(int,int)</signal>
    <receiver>GemdDlg</receiver>
    <slot>extrP_clicked(int,int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>270</x>
+     <y>220</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -572,8 +573,8 @@
    <slot>setddP_clicked(int,int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>410</x>
+     <y>150</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -582,14 +583,14 @@
    </hints>
   </connection>
   <connection>
-   <sender>addfP</sender>
+   <sender>AddFiles</sender>
    <signal>clicked(int,int)</signal>
    <receiver>GemdDlg</receiver>
    <slot>addfP_clicked(int,int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>340</x>
+     <y>220</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -604,8 +605,8 @@
    <slot>newfP_clicked(int,int)</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>340</x>
+     <y>150</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
@@ -668,8 +669,8 @@
    <slot>timeCB_clicked()</slot>
    <hints>
     <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
+     <x>270</x>
+     <y>360</y>
     </hint>
     <hint type="destinationlabel">
      <x>20</x>
