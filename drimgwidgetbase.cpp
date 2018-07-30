@@ -32,9 +32,6 @@
 //#include <klocale.h>
 //#include <kfiledialog.h>
 
-typedef unsigned char  byte;
-typedef unsigned int   UINT;
-typedef unsigned long  ULONG;
 
 char act = 0;
 char abortf = 0;
@@ -120,8 +117,6 @@ void drimgwidgetbase::getForm()
     if(ui->rawRB->isChecked())  form=0;
     if(ui->hdfRB->isChecked())  form=1;
     if(ui->h256RB->isChecked()) form=2;
-
-
 }
 
 void drimgwidgetbase::detSD()
@@ -169,11 +164,11 @@ void drimgwidgetbase::detSDloop()
     for (n=0;n<20;n++)
     {
         if (n<6) { devStr1[5] = 's' ;
-            devStr1[7] = 'c'+n; //we're not checking /dev/sda ana /dev/sdb
+            devStr1[7] = 'c'+n; //we're not checking /dev/sda and /dev/sdb
             strcpy(devStr,devStr1);
         }
         else if (n<12) { devStr1[5] = 'h' ;
-            devStr1[7] = 'c'+n-6; //we're not checking /dev/hda ana /dev/hdb
+            devStr1[7] = 'c'+n-6; //we're not checking /dev/hda and /dev/hdb
             strcpy(devStr,devStr1);
         }
         else {
@@ -263,7 +258,7 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
       act=0; return;
     }
 
-    fread(bufr,1,512,finp);
+    if(fread(bufr,1,512,finp)) {}
     fclose(finp);
     OffFS = 0 ;
     ui->secofEdit->setText("0");
@@ -388,7 +383,49 @@ void drimgwidgetbase::on_FileTrButton_clicked()
    }
     // correct CHS for case of successfull geo guess:
 }
+void drimgwidgetbase::setImageProgress(int *prog, int *prnxt, int *status, ULONG *copied, ULONG m, ULONG SecCnt)
+{
+    QCoreApplication::processEvents();
+    *copied = *copied + *status;
+    *prog = 100*m/SecCnt;
+    if (prog>prnxt) {
+       ui->progressBar1->setValue(*prog+1);
+       prnxt = prnxt+1 ;
+    }
+}
 
+int ReadSmallSect(FILE* finp, FILE* fout, bool swap, bool h256rb)
+{
+    int status, n;
+    unsigned char bufr[512];
+    unsigned char buf2[512];
+
+    if( swap && h256rb) {return -2;}
+    status = fread(bufr,1,512,finp);
+    if (status < 512) {return -1;}
+    if (h256rb) { for (n = 0; n<256; n++) { buf2[n] = bufr[n*2]; }}
+    if (swap) { for (n = 0; n<512; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }}
+    if (swap) { status = fwrite(buf2,1,512,fout); }
+    else if (h256rb) { status = fwrite(buf2,1,256,fout); }
+    else { status = fwrite(bufr,1,512,fout); }
+    return status;
+}
+int ReadBigSect(FILE* finp, FILE* fout, bool swap, bool h256rb)
+{
+    int status;
+    unsigned char bufr[0x10000];
+    unsigned char buf2[0x10000];
+
+    if( swap && h256rb) {return -2;}
+    status = fread(bufr,1,0x10000,finp);
+    if (status < 0x10000) {return -1;}
+    if (h256rb) { for (n = 0; n<0x8000; n++) { buf2[n] = bufr[n*2]; }}
+    if (swap) { for (n = 0; n<0x10000; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }}
+    if (swap) { status = fwrite(buf2,1,0x10000,fout); }
+    else if (h256rb) { status = fwrite(buf2,1,0x8000,fout); }
+    else { status = fwrite(bufr,1,0x10000,fout); }
+    return status;
+}
 
 void drimgwidgetbase::on_readButton_clicked()
 {
@@ -439,18 +476,24 @@ void drimgwidgetbase::on_readButton_clicked()
 
                 ui->progressBar1->setValue(0);
                 setCursor(QCursor(Qt::WaitCursor));
-
-                for( m = 0; m < SecCnt; m++ ) {
-                   status=fread(bufr,1,512,finp);
-                   for (n = 0; n<512; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }
-                   status = fwrite(buf2,1,512,fout);
-                   QCoreApplication::processEvents();
-                   copied = copied+status;
-                   if (abortf) { abortf=0 ; break; }
-                   prog = 100*m/SecCnt;
-                   if (prog>prnxt) {
-                      ui->progressBar1->setValue(prog+1);
-                      prnxt = prnxt+1 ;
+                if (ui->fast_rw->checkState()== Qt::Checked){
+                   ULONG bg = SecCnt >> 7;
+                   ULONG sm = SecCnt & 0x7F;
+                   for( m = 0; m < bg; m++ ) {
+                      status = ReadBigSect(finp, fout, true, false);
+                      setImageProgress(&prog, &prnxt, &status, &copied, m << 7, SecCnt);
+                      if (abortf) { abortf=0 ; break; }
+                   }
+                   for( m = 0; m < sm; m++ ) {
+                      status = ReadSmallSect(finp, fout, true, false);
+                      setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
+                      if (abortf) { abortf=0 ; break; }
+                   }
+                }else{
+                   for( m = 0; m < SecCnt; m++ ) {
+                      status = ReadSmallSect(finp, fout, true, false);
+                      setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
+                      if (abortf) { abortf=0 ; break; }
                    }
                 }
                 fclose(finp);
@@ -512,23 +555,25 @@ void drimgwidgetbase::on_readButton_clicked()
               int prnxt = 1;
               ui->progressBar1->setValue(0);
               //SendMessage(hPb, PBM_SETPOS, 0, 0);if (!act) {
-              for( m = 0; m < SecCnt; m++ ) {
-                 setCursor(QCursor(Qt::WaitCursor));
-                 //SetCursor( jc) ;
-                 status=fread(bufr,1,512,finp);
-                 // if (form == 2) {
-                 //    for (n = 0; n<256; n++) buf2[n] = bufr[n*2];
-                 //    status = fwrite(buf2,1,256,fout);
-                 //    }
-                 //else
-                 status = fwrite(bufr,1,512,fout);
-                 QCoreApplication::processEvents();
-                 copied = copied + status;
-                 if (abortf) { abortf=0 ; break; }
-                 prog = 100*m/SecCnt;
-                 if (prog>prnxt) {
-                    ui->progressBar1->setValue(prog+1);
-                    prnxt = prnxt+1 ;
+              setCursor(QCursor(Qt::WaitCursor));
+              if (ui->fast_rw->checkState()== Qt::Checked){
+                 ULONG bg = SecCnt >> 7;
+                 ULONG sm = SecCnt & 0x7F;
+                 for( m = 0; m < bg; m++ ) {
+                    status = ReadBigSect(finp, fout, false, false);
+                    setImageProgress(&prog, &prnxt, &status, &copied, m << 7, SecCnt);
+                    if (abortf) { abortf=0 ; break; }
+                 }
+                 for( m = 0; m < sm; m++ ) {
+                    status = ReadSmallSect(finp, fout, false, false);
+                    setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
+                    if (abortf) { abortf=0 ; break; }
+                 }
+              }else{
+                 for( m = 0; m < SecCnt; m++ ) {
+                    status = ReadSmallSect(finp, fout, false, false);
+                    setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
+                    if (abortf) { abortf=0 ; break; }
                  }
               }
               fclose(finp);
@@ -589,29 +634,24 @@ void drimgwidgetbase::on_readButton_clicked()
             ui->progressBar1->setValue(0);
             setCursor(QCursor(Qt::WaitCursor));
             //return;
-            for( m = 0; m < SecCnt; m++ ) {
-               status=fread(bufr,1,512,finp);
-               if (form == 2) {
-                  for (n = 0; n<256; n++) buf2[n] = bufr[n*2];
-                  status = fwrite(buf2,1,256,fout);
+            if (ui->fast_rw->checkState()== Qt::Checked){
+               ULONG bg = SecCnt >> 7;
+               ULONG sm = SecCnt & 0x7F;
+               for( m = 0; m < bg; m++ ) {
+                  status = ReadBigSect(finp, fout, Fsub, form == 2);
+                  setImageProgress(&prog, &prnxt, &status, &copied, m << 7, SecCnt);
+                  if (abortf) { abortf=0 ; break; }
                }
-               else {
-                  if (Fsub){
-                    // Swap L/H
-                    for (n = 0; n<512; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }
-                    status = fwrite(buf2,1,512,fout);
-                  }
-                  else{
-                    status = fwrite(bufr,1,512,fout);
-                  }
+               for( m = 0; m < sm; m++ ) {
+                  status = ReadSmallSect(finp, fout, Fsub, form == 2);
+                  setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
+                  if (abortf) { abortf=0 ; break; }
                }
-               copied = copied + status;
-               QCoreApplication::processEvents();
-               if (abortf) { abortf=0 ; break; }
-               prog = 100*m/SecCnt;
-               if (prog>prnxt) {
-                  ui->progressBar1->setValue(prog+1);
-                  prnxt = prnxt + 1;
+            }else{
+               for( m = 0; m < SecCnt; m++ ) {
+                  status = ReadSmallSect(finp, fout, Fsub, form == 2);
+                  setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
+                  if (abortf) { abortf=0 ; break; }
                }
             }
             fclose(finp);
@@ -656,7 +696,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
       }
       //Load 512+128 bytes
       //status=
-      fread(bufr,1,640,fout);
+      if (fread(bufr,1,640,fout)) {}
       // get filelen
       fseek(fout, 0, SEEK_END) ;
       filelen = ftell(fout); //Filelength got

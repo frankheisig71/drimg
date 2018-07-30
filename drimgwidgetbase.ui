@@ -2,6 +2,9 @@
 <ui version="4.0">
  <class>drimgwidgetbase</class>
  <widget class="QWidget" name="drimgwidgetbase">
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -325,7 +328,7 @@
   <widget class="QPushButton" name="refrButton">
    <property name="geometry">
     <rect>
-     <x>80</x>
+     <x>10</x>
      <y>220</y>
      <width>90</width>
      <height>31</height>
@@ -1054,6 +1057,9 @@
    </property>
   </widget>
   <widget class="QCheckBox" name="ov2roCB">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
    <property name="geometry">
     <rect>
      <x>10</x>
@@ -1069,7 +1075,7 @@
     <string>Alt+G</string>
    </property>
    <property name="checked">
-    <bool>true</bool>
+    <bool>false</bool>
    </property>
   </widget>
   <widget class="QPushButton" name="writeButton">
@@ -1530,6 +1536,19 @@
      <string>Alt+2</string>
     </property>
    </widget>
+  </widget>
+  <widget class="QCheckBox" name="fast_rw">
+   <property name="geometry">
+    <rect>
+     <x>110</x>
+     <y>220</y>
+     <width>141</width>
+     <height>22</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>fast read /write</string>
+   </property>
   </widget>
  </widget>
  <layoutdefault spacing="6" margin="11"/>

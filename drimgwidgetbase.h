@@ -5,6 +5,10 @@
 #include <QModelIndex>
 #include "gemddlg.h"
 
+typedef unsigned char  byte;
+typedef unsigned int   UINT;
+typedef unsigned long  ULONG;
+
 namespace Ui {
 class drimgwidgetbase;
 }
@@ -21,6 +25,7 @@ public:
     void getCHS();
     void getForm();
     void detSD();
+    void setImageProgress(int *prog, int *prnxt, int *status, ULONG *copied, ULONG m, ULONG SecCnt);
 
 private slots:
     void on_refrButton_clicked();
