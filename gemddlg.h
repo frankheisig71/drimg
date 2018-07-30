@@ -4,8 +4,8 @@
 #include <QDialog>
 #include <QModelIndex>
 
-//#define FRANKS_DEBUG
-//#define WINDOWS
+#define FRANKS_DEBUG
+#define WINDOWS
 
 namespace Ui {
 class GemdDlg;
@@ -38,6 +38,7 @@ public:
 
 private slots:
     void on_partLB_clicked(const QModelIndex &index);
+    void on_filesLB_clicked(const QModelIndex &index);
     void on_filesLB_doubleClicked(const QModelIndex &index);
     void on_opdirP_clicked();
     void on_DeleteFiles_clicked();
@@ -60,5 +61,12 @@ private:
 
 int fileopen(const char* fname, const unsigned long flags);
 int fileclose(int fd);
+
+void FATlookUp(unsigned int StartCluster, unsigned int* NextCluster, unsigned int* FileSector);
+void FATfreeCluster(unsigned int Cluster);
+unsigned int GetFATFileLength(unsigned char* DirBuffer, int EntryPos);
+void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Length);
+void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams);
+void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime);
 
 #endif // GEMDDLG_H

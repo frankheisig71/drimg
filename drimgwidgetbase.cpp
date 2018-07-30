@@ -170,11 +170,11 @@ void drimgwidgetbase::detSDloop()
     for (n=0;n<20;n++)
     {
         if (n<6) { devStr1[5] = 's' ;
-            devStr1[7] = 'c'+n; //we're not checking /dev/sda ana /dev/sdb
+            devStr1[7] = 'c'+n; //we're not checking /dev/sda and /dev/sdb
             strcpy(devStr,devStr1);
         }
         else if (n<12) { devStr1[5] = 'h' ;
-            devStr1[7] = 'c'+n-6; //we're not checking /dev/hda ana /dev/hdb
+            devStr1[7] = 'c'+n-6; //we're not checking /dev/hda and /dev/hdb
             strcpy(devStr,devStr1);
         }
         else {

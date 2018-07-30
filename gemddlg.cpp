@@ -56,7 +56,7 @@ extern char detDev[9][16] ;
 extern char physd[9];
 extern char loadedF[256] ;
 extern int form;
-extern int PartSectorSizee, clust ;
+extern int clust ;
 extern int status ;
 
 extern char segflag ;
@@ -77,18 +77,26 @@ extern QString litet;
 
 
 int drih;
-ULONG epos, eposIn, PartStartPosition, stfilelen, copied ;
+ULONG epos, eposIn, stfilelen, copied ;
 ULONG Gpartp[24] ; // GemDos part postions
 ULONG Gparsiz[24] ; // GemDos part sizes
-ULONG  PartTotalSectors ,PartTotalDataClusters ;
 ULONG  dirflen, oldclun ;
 int PartSubDirLevel, reculev, selcnt, selP, j, d, e ;
 int fdat, ftim ;
 unsigned int oe, zz, staclu;
-unsigned int dpos, fatTime, fatDate, PartSectorSize ;
-unsigned int PartReservedSectors ; // Used clusters, free clusters of partition
-UINT PartSectorsPerFAT , PartRootDirSectors, PartSectorsPerCluster, PartHeadSectors,  PartFirstRootDirSector, ClunOfParent  ;
+unsigned int dpos, fatTime, fatDate, ClunOfParent;
 long tosave;
+
+unsigned int  PartSectorSize;
+unsigned int  PartReservedSectors ; // Used clusters, free clusters of partition
+unsigned int  PartSectorsPerFAT;
+unsigned int  PartRootDirSectors;
+unsigned int  PartSectorsPerCluster;
+unsigned int  PartHeadSectors;
+unsigned int  PartFirstRootDirSector;
+unsigned long PartTotalSectors;
+unsigned long PartTotalDataClusters;
+unsigned long PartStartPosition;
 
 unsigned int  DirCurrentClustes[98] ; // For storing DIR cluster -> Points To Sector
 unsigned int  DirCurrentLenght;
@@ -376,9 +384,10 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    }
    PartTotalDataClusters = (PartTotalSectors-PartHeadSectors)/PartSectorsPerCluster ;
    // Display begin sector and count of sectors of selected part. :
-
+   #ifdef FRANKS_DEBUG
    qhm.setNum( Gpartp[selP] );
-   qhm.append(", ");
+   qhm.insert(0, "start sec.: ");
+   qhm.append(", sec. cnt: ");
    QString num;
    if ( Filesys == 13) {
       num.setNum( PartTotalSectors );
@@ -388,6 +397,7 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    }
    qhm.append(num);
    ui->partinfLab->setText(qhm);
+   #endif
    // Load FAT #1
    lseek(drih, PartStartPosition+PartSectorSize*PartReservedSectors, 0) ;
    read(drih, PartFATbuffer, PartSectorsPerFAT*PartSectorSize);
@@ -406,6 +416,46 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    // Load root DIR
 
    loadroot() ;
+}
+void GemdDlg::on_filesLB_clicked(const QModelIndex &index)
+{
+    tm  DateTime;
+    unsigned int dpos;
+    int i, l;
+    QChar* buf;
+
+    dpos = dirpos[index.row()];
+    QString qhm;
+    GenerateFileName(dirbuf, dpos, &qhm);
+    l = qhm.length();
+    buf = qhm.data();
+    for(i=l-1;i>=0;i--){
+       if (i>12){ qhm.remove(i,1); }
+       else{ if(buf[i] == ' '){ qhm.remove(i,1); } }
+    }
+    l = qhm.length();
+    if(buf[l-1] == '.') {qhm.remove(l-1,1); }
+    GetFATFileDateTime(dirbuf, dpos, &DateTime);
+    qhm.append(" ");
+    QString num;
+    num.setNum(DateTime.tm_year + 1900);
+    qhm.append(num);
+    if (DateTime.tm_mon < 10){ qhm.append("/0"); } else { qhm.append("/"); }
+    num.setNum(DateTime.tm_mon);
+    qhm.append(num);
+    if (DateTime.tm_mday < 10){ qhm.append("/0"); } else { qhm.append("/"); }
+    num.setNum(DateTime.tm_mday);
+    qhm.append(num);
+    if (DateTime.tm_hour < 10){ qhm.append(" 0"); } else { qhm.append(" "); }
+    num.setNum(DateTime.tm_hour);
+    qhm.append(num);
+    if (DateTime.tm_min < 10){ qhm.append(":0"); } else { qhm.append(":"); }
+    num.setNum(DateTime.tm_min);
+    qhm.append(num);
+    if (DateTime.tm_sec < 10){ qhm.append(":0"); } else { qhm.append(":"); }
+    num.setNum(DateTime.tm_sec);
+    qhm.append(num);
+    ui->errti->setText(qhm);
 }
 
 void GemdDlg::loadroot()
@@ -808,7 +858,7 @@ void GemdDlg::GetFATFileName(unsigned char* DirBuffer, int EntryPos, char* NameB
    }
    NameBuffer[i] = 0 ; // String term.
    ui->exwht->setText(NameBuffer);
-   ui->errti->setText(" ");
+   //ui->errti->setText(" ");
    QCoreApplication::processEvents();
 }
 bool IsEmpty(unsigned char* DirBuffer, int EntryPos)
@@ -892,6 +942,29 @@ void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* Fil
    DirBuffer[EntryPos+24] = n;
    DirBuffer[EntryPos+25] = n>>8;
 }
+
+void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime)
+{
+   unsigned int n;
+
+   n = DirBuffer[EntryPos+22];
+   n = n + (DirBuffer[EntryPos+23] << 8);
+   fatTime = n ;
+   DateTime->tm_hour =  n >> 11;
+   DateTime->tm_min  = (n >> 5) & 0x003F;
+   DateTime->tm_sec  = (n & 0x1F) << 1;
+   //n = (tout.tm_sec/2)|(tout.tm_min<<5)|(tout.tm_hour<<11) ;
+
+   n = DirBuffer[EntryPos+24];
+   n = n + (DirBuffer[EntryPos+25] << 8);
+   fatDate = n;
+   DateTime->tm_year = (n >> 9) + 80;
+   DateTime->tm_mon  = ((n >> 5) & 0x000F) - 1;
+   DateTime->tm_mday =  n & 0x001F;
+   //n = (tout.tm_mday)|((tout.tm_mon+1)<<5)|( (tout.tm_year-80)<<9) ;
+
+}
+
 
 void GemdDlg::EraseFile(unsigned char* DirBuffer, int EntryPos)
 {
@@ -1555,8 +1628,10 @@ void GemdDlg::on_newfP_clicked()
    //SetDlgItemText(hDlgWnd,exwht,dstr); // Testing
    n = (tout.tm_sec/2)|(tout.tm_min<<5)|(tout.tm_hour<<11) ;
    fatTime = n ;
+   /*
    qhm.setNum(n);
    ui->errti->setText(qhm); //testing
+   */
    dirbuf[EntryPos+22] = n;
    dirbuf[EntryPos+23] = n>>8;
    //n = int(FatDate) ;
@@ -1611,7 +1686,7 @@ void GemdDlg::on_newfP_clicked()
    // Refresh Used/free indicator:
    ShowPartitionUsage() ;
    // Need to refresh listbox content
-   LoadSubDir(false, true) ;
+   LoadSubDir((PartSubDirLevel == 0), true) ;
 }
 
 
