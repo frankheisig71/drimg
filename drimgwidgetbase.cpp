@@ -121,8 +121,6 @@ void drimgwidgetbase::getForm()
     if(ui->rawRB->isChecked())  form=0;
     if(ui->hdfRB->isChecked())  form=1;
     if(ui->h256RB->isChecked()) form=2;
-
-
 }
 
 void drimgwidgetbase::detSD()

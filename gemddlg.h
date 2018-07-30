@@ -26,7 +26,6 @@ public:
     void DirUp();
     void LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer);
     void LoadSubDir(bool IsRoot, bool doList);
-    int  LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, bool doList);
     int  ExtractFile(unsigned char* DirBuffer, int pos);
     void EraseFile(unsigned char* DirBuffer, int EntryPos);
     void GetFATFileName(unsigned char* DirBuffer, int DirPos, char* NameBuffer);
@@ -62,11 +61,13 @@ private:
 int fileopen(const char* fname, const unsigned long flags);
 int fileclose(int fd);
 
+int  LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, QString* Name);
 void FATlookUp(unsigned int StartCluster, unsigned int* NextCluster, unsigned int* FileSector);
 void FATfreeCluster(unsigned int Cluster);
 unsigned int GetFATFileLength(unsigned char* DirBuffer, int EntryPos);
 void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Length);
 void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams);
 void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime);
+void SortFATNames(unsigned char* DirBuffer, unsigned int* UnSortList, unsigned int* SortList, unsigned int* SortIndex);
 
 #endif // GEMDDLG_H
