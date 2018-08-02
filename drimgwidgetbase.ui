@@ -233,10 +233,10 @@
   <widget class="QPushButton" name="abortButton">
    <property name="geometry">
     <rect>
-     <x>269</x>
+     <x>289</x>
      <y>310</y>
-     <width>191</width>
-     <height>30</height>
+     <width>161</width>
+     <height>21</height>
     </rect>
    </property>
    <property name="font">
@@ -289,14 +289,14 @@
   <widget class="QLabel" name="curopLabel">
    <property name="geometry">
     <rect>
-     <x>0</x>
+     <x>10</x>
      <y>360</y>
-     <width>470</width>
+     <width>451</width>
      <height>20</height>
     </rect>
    </property>
    <property name="text">
-    <string>op</string>
+    <string/>
    </property>
    <property name="wordWrap">
     <bool>false</bool>
@@ -328,7 +328,7 @@
   <widget class="QPushButton" name="refrButton">
    <property name="geometry">
     <rect>
-     <x>10</x>
+     <x>170</x>
      <y>220</y>
      <width>90</width>
      <height>31</height>
@@ -1063,8 +1063,8 @@
    <property name="geometry">
     <rect>
      <x>10</x>
-     <y>250</y>
-     <width>180</width>
+     <y>220</y>
+     <width>151</width>
      <height>22</height>
     </rect>
    </property>
@@ -1296,9 +1296,9 @@
   <widget class="QListWidget" name="listBox1">
    <property name="geometry">
     <rect>
-     <x>0</x>
+     <x>10</x>
      <y>30</y>
-     <width>261</width>
+     <width>251</width>
      <height>181</height>
     </rect>
    </property>
@@ -1536,19 +1536,6 @@
      <string>Alt+2</string>
     </property>
    </widget>
-  </widget>
-  <widget class="QCheckBox" name="fast_rw">
-   <property name="geometry">
-    <rect>
-     <x>110</x>
-     <y>220</y>
-     <width>141</width>
-     <height>22</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>fast read /write</string>
-   </property>
   </widget>
  </widget>
  <layoutdefault spacing="6" margin="11"/>

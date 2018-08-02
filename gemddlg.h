@@ -4,8 +4,8 @@
 #include <QDialog>
 #include <QModelIndex>
 
-#define FRANKS_DEBUG
-//#define WINDOWS
+//#define FRANKS_DEBUG
+#define WINDOWS
 
 namespace Ui {
 class GemdDlg;

@@ -20,7 +20,6 @@
  ***************************************************************************/
 #include "drimgwidgetbase.h"
 #include "ui_drimgwidgetbase.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -38,8 +37,6 @@ char abortf = 0;
 
 int  n, c, i, k, s, o;  //loop counter, general
 char devStr[13];
-char devStr1[9]  = "/dev/sda";
-char devStr2[13] = "/dev/mmcblk0";
 char dstr[60]; //for string operations
 int  detCount;
 char detDev[13][16] ;
@@ -55,15 +52,24 @@ char segflag = 0;
 bool ov2ro = 1;
 
 QString fileName;
-FILE *finp, *fout, *ftout, *flout;
-ULONG filelen;
+#ifdef WINDOWS
+HANDLE finp, fout, flout;
+#define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
+#else
+FILE *finp, *fout, *flout;
+#define FILE_OPEN_FAILED NULL
+#endif
+long LastIOError = 0;
+long long filelen;
+
+
 
 ULONG f, g, m, u ; // general var
 ULONG OffFS = 0 ;
 ULONG exdl[16];
 ULONG SecCnt = 1;
 ULONG ChaSecCnt ;
-ULONG fsecc, rest;
+ULONG rest;
 UINT  step, cyld ;
 UINT  sectr = 32;
 ULONG cylc  = 1 ;
@@ -81,11 +87,229 @@ byte rsh[128] = {0x52,0x53,0x2d,0x49,0x44,0x45,0x1a,0x10,0,0x80,0,0,0,0,0,0,0,0,
    32,32,32,32,32,32,32,32,32,32,
    1,0,0,0,0,3,0,0,0,2,0,0} ;
 
-unsigned char  bufr[640];
-unsigned char  buf2[524];
-unsigned char  bufsw[524] ;
-
 QString op, qhm;
+
+#ifdef WINDOWS
+
+void CloseFileX(HANDLE f){
+    CloseHandle(f);
+}
+
+HANDLE OpenFileX(const char* name, const char * mode)
+{
+   DWORD CrMode = 0;
+   DWORD OpMode = 0;
+   HANDLE fh;
+
+   if (strstr(mode, "r") != NULL) { CrMode = CrMode | GENERIC_READ; OpMode = OPEN_EXISTING; }
+   if (strstr(mode, "w") != NULL) { CrMode = CrMode | GENERIC_WRITE; OpMode = OPEN_ALWAYS; }
+
+
+   fh = CreateFileA(name,
+                    CrMode,
+                    0,
+                    NULL,
+                    OpMode,
+                    FILE_ATTRIBUTE_NORMAL,
+                    NULL);
+   LastIOError = GetLastError();
+   return fh;
+
+}
+HANDLE OpenDevice(const char* name, const char * mode)
+{
+    DWORD CrMode = 0;
+    HANDLE fh;
+
+    if (strstr(mode, "r") != NULL) { CrMode = CrMode | GENERIC_READ; }
+    if (strstr(mode, "w") != NULL) { CrMode = CrMode | GENERIC_WRITE; }
+
+
+    fh = CreateFileA(name,
+                     CrMode,
+                     0, //FILE_SHARE_READ | FILE_SHARE_WRITE,
+                     NULL,
+                     OPEN_EXISTING,
+                     FILE_FLAG_NO_BUFFERING,// | FILE_FLAG_WRITE_THROUGH,
+                     NULL);
+    LastIOError = GetLastError();
+    return fh;
+}
+
+int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh){
+   DWORD BytesRead = 0;
+   ReadFile(fh, buffer, DataSize*DataCnt, &BytesRead, NULL);
+   LastIOError = GetLastError();
+   return BytesRead / DataSize;
+}
+int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh){
+    DWORD BytesWritten = 0;
+    WriteFile(fh, buffer, DataSize*DataCnt, &BytesWritten, NULL);
+    LastIOError = GetLastError();
+    return BytesWritten / DataSize;
+}
+int PutCharFile(const int data, HANDLE fh){
+   unsigned char b;
+   b = (unsigned char)data;
+   if (1 == WriteToFile(&b, 1, 1, fh)) { LastIOError = GetLastError(); return b; }
+   LastIOError = GetLastError();
+   return -1;
+}
+
+
+long long GetDeviceLengthHandle(HANDLE fh)
+{
+    DISK_GEOMETRY_EX pdg;
+    DWORD  junk;
+
+    BOOL bResult = DeviceIoControl(fh,
+                              IOCTL_DISK_GET_DRIVE_GEOMETRY_EX,
+                              NULL, 0,
+                              &pdg, sizeof(pdg),
+                              &junk,
+                              (LPOVERLAPPED) NULL);
+    if (bResult) {
+        return pdg.DiskSize.QuadPart;
+    }
+    return 0;
+}
+
+long long GetDeviceLength(const char* devName)
+{
+    HANDLE fh;
+    long long devLen = 0;
+
+
+    fh = CreateFileA(devName,
+                     0,
+                     FILE_SHARE_READ | FILE_SHARE_WRITE,
+                     NULL,
+                     OPEN_EXISTING,
+                     0,
+                     NULL);
+
+    if (fh != INVALID_HANDLE_VALUE){
+        devLen = GetDeviceLengthHandle(fh);
+        CloseHandle(fh);
+    }
+    return devLen;
+}
+
+long long GetFileLength64(HANDLE fh)
+{
+   DWORD hi, lo;
+   LARGE_INTEGER len;
+
+   lo = GetFileSize(fh, &hi);
+   if (lo != INVALID_FILE_SIZE){
+      len.HighPart = hi;
+      len.LowPart  = lo;
+      return len.QuadPart;
+   }else {
+      if (GetLastError() == ERROR_SUCCESS){
+         len.HighPart = hi;
+         len.LowPart  = lo;
+         return len.QuadPart;
+      }
+   }
+   return (long long)-1;
+}
+
+long GetFileLength(HANDLE fh)
+{
+   DWORD junk;
+   return GetFileSize(fh, &junk);
+}
+
+long SeekFileX(HANDLE fh, int offset, int origin){
+   return SetFilePointer(fh, offset, 0, origin);
+}
+long long SeekFileX64(HANDLE fh, long long offset, int origin){
+   LARGE_INTEGER topos, newpos;
+
+   topos.QuadPart = offset;
+   if (SetFilePointerEx(fh, topos, &newpos, origin)) {  return newpos.QuadPart; }
+   return -1;
+}
+
+#else
+void CloseFileX(FILE* f){
+    fclose(f);
+}
+
+int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
+    int read = fread(buffer,DataSize,DataCnt,fh);
+    LastIOError = errno;
+    return read;
+}
+int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
+    int written = fwrite(buffer,DataSize,DataCnt,fh);
+    LastIOError = errno;
+    return written;
+}
+FILE* OpenDevice(const char* name, const char * mode){
+   FILE* buf = fopen(name, mode);
+   LastIOError = errno;
+   return buf;
+}
+FILE* OpenFileX(const char* name, const char * mode){
+    int written = fwrite(buffer,DataSize,DataCnt,fh);
+    LastIOError = errno;
+    return written;
+}
+
+long long GetDeviceLength(const char* devName)
+{
+   int drih;
+   long long devLen;
+
+   drih = open(devName,  O_RDONLY | O_NONBLOCK) ;
+   if (drih>0) {
+      devLen = lseek64( drih, 0,  SEEK_END );
+      fclose(drih);
+      return devLen;
+   }
+   return 0;
+}
+
+long long GetFileLength64(FILE* fh)
+{
+   long long pos, result;
+   pos = fseek(fh, 0, SEEK_CUR);
+   result = fseek(fh,0,SEEK_END);
+   fseek(fh, pos, SEEK_CUR);
+   return result;
+}
+long long GetDeviceLengthHandle(FILE* fh)
+{
+   return GetFileLength64(fh);
+}
+
+long GetFileLength(FILE* fh)
+{
+   long pos, result;
+   pos = fseek(fh, 0, SEEK_CUR);
+   result = fseek(fh,0,SEEK_END);
+   fseek(fh, pos, SEEK_CUR);
+   return result;
+}
+
+int PutCharFile(const int data, FILE* fh){
+   int buf = fputc(data, fh);
+   LastIOError = errno;
+   return buf;
+}
+long SeekFileX(FILE* fh, int offset, int origin){
+   return fseek(fh,offset,origin);
+}
+long long SeekFileX64(FILE* fh, long long offset, int origin){
+   return fseek(fh, offset, origin);
+}
+int GetLastError(void){
+   return errno;
+}
+
+#endif
 
 drimgwidgetbase::drimgwidgetbase(QWidget *parent) :
     QWidget(parent),
@@ -119,83 +343,84 @@ void drimgwidgetbase::getForm()
     if(ui->h256RB->isChecked()) form=2;
 }
 
-void drimgwidgetbase::detSD()
+int drimgwidgetbase::detSD()
 {
- int drih, e;
- unsigned long long drisize;
+   int e, rc = 0;
+   unsigned long long drisize;
 
-#ifdef WINDOWS
- drih = _open(devStr,  O_RDONLY) ;
-#else
- drih = open(devStr,  O_RDONLY | O_NONBLOCK) ;
-#endif
- if (drih>0) {
-
-   drisize = lseek64( drih, 0,  SEEK_END );
-   fileclose(drih) ;
-
-
+   drisize = GetDeviceLength(devStr);
    if (drisize) {
-     finp = fopen(devStr,"wb"); // CD ROMs will not open
-     if (finp != NULL){
-        exdl[detCount] = drisize/512; // Sector count
-        c=1;
-        qhm.setNum((double)drisize/1048576);
-        strcat(dstr, (char*)qhm.toLatin1().data());
-        strcat(dstr," MB");
-        fclose(finp);
+      finp = OpenDevice(devStr,"wb"); // CD ROMs will not open
+      if (finp != FILE_OPEN_FAILED){
+         exdl[detCount] = drisize/512; // Sector count
+         rc = 1;
+         qhm.setNum((double)drisize/1048576);
+         strcat(dstr, (char*)qhm.toLatin1().data());
+         strcat(dstr," MB");
+         CloseFileX(finp);
       }
-    }
-  }
-  else{
-    e = errno;
-    if (e == EACCES) {
-      QMessageBox::critical(this, "Drive open error.", "Need to be root for accessing devices. Root?", QMessageBox::Cancel, QMessageBox::Cancel);
-      act=0;
-    }
-  }
+   }
+   else{
+       e = GetLastError();
+      if (e == EACCES) {
+         QMessageBox::critical(this, "Drive open error.", "Need to be root for accessing devices. Root?", QMessageBox::Cancel, QMessageBox::Cancel);
+         act=0;
+      }
+   }
+   return rc;
 }
 
 void drimgwidgetbase::detSDloop()
 {
-    ui->listBox1->clear();
-    detCount = 0;
-    act      = 1;
-    for (n=0;n<20;n++)
-    {
-        if (n<6) { devStr1[5] = 's' ;
-            devStr1[7] = 'c'+n; //we're not checking /dev/sda and /dev/sdb
-            strcpy(devStr,devStr1);
-        }
-        else if (n<12) { devStr1[5] = 'h' ;
-            devStr1[7] = 'c'+n-6; //we're not checking /dev/hda and /dev/hdb
-            strcpy(devStr,devStr1);
-        }
-        else {
-            devStr2[11] = '0'+n-12; //but we're checking /dev/mmcblk0 to /dev/mmcblk7
-            strcpy(devStr,devStr2);
-        }
+   #ifdef WINDOWS
+   char devStr1[7] = "\\\\.\\E:";
+   #else
+   char devStr1[9]  = "/dev/sda";
+   char devStr2[13] = "/dev/mmcblk0";
+   #endif
 
-        strcpy(dstr,devStr);
-        strcat(dstr,"  ");
-        c=0; // hit flag
-
-        detSD() ;
-        if (act == 0) { break; }
-
-        if (c) {
-        ui->listBox1->addItem(QString(dstr));
-        if (n<12){
-          for (k=0;k<9;k++) detDev[k][detCount]=devStr[k]; // Store dev path
-          for (k=9;k<13;k++) detDev[k][detCount]='\0';
-        }
-        else{
-          for (k=0;k<13;k++) detDev[k][detCount]=devStr[k]; // Store dev path
-        }
-        detCount++;
+   ui->listBox1->clear();
+   detCount = 0;
+   act      = 1;
+   for (n=0;n<20;n++)
+   {
+      #ifdef WINDOWS
+      devStr1[4] = 'E'+n; //we're not checking /dev/sda and /dev/sdb
+      strcpy(devStr,devStr1);
+      #else
+      if (n<6) { devStr1[5] = 's' ;
+         devStr1[7] = 'c'+n; //we're not checking /dev/sda and /dev/sdb
+         strcpy(devStr,devStr1);
       }
-    }
-    act = 0;
+      else if (n<12) { devStr1[5] = 'h' ;
+         devStr1[7] = 'c'+n-6; //we're not checking /dev/hda and /dev/hdb
+         strcpy(devStr,devStr1);
+      }
+      else {
+         devStr2[11] = '0'+n-12; //but we're checking /dev/mmcblk0 to /dev/mmcblk7
+         strcpy(devStr,devStr2);
+      }
+      #endif
+      strcpy(dstr,devStr);
+      strcat(dstr,"  ");
+      c=0; // hit flag
+
+      int c = detSD();
+      if (act == 0) { break; }
+
+      if (c) {
+      ui->listBox1->addItem(QString(dstr));
+      if (n<12){
+         for (k=0;k<9;k++) detDev[k][detCount]=devStr[k]; // Store dev path
+            for (k=9;k<13;k++) detDev[k][detCount]='\0';
+         }
+         else{
+            for (k=0;k<13;k++) detDev[k][detCount]=devStr[k]; // Store dev path
+         }
+         detCount++;
+      }
+   }
+   act = 0;
 }
 
 void drimgwidgetbase::on_refrButton_clicked()
@@ -217,6 +442,9 @@ void drimgwidgetbase::on_quitButton_clicked()
 
 void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
 {
+    unsigned char bufr[512];
+    unsigned char bufsw[512];
+
     selected = index.row();
 
     qhm.setNum(selected);
@@ -252,14 +480,19 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     for (k=0;k<13;k++) physd[k] = detDev[k][selected];
 
     ui->inf4Label->setText(physd); //testing!!!
-    finp = fopen(physd,"rb");
-    if (finp == NULL) {
+    finp = OpenDevice(physd,"rb");
+    if (finp == FILE_OPEN_FAILED) {
       QMessageBox::critical(this, "Drive open error.", "Need to be root for accessing devices. Root?", QMessageBox::Cancel, QMessageBox::Cancel);
       act=0; return;
     }
 
-    if(fread(bufr,1,512,finp)) {}
-    fclose(finp);
+    if(ReadFromFile(bufr,1,512,finp) < 512) {
+       QString qhm;
+       qhm.number(GetLastError());
+       qhm.insert(0, "Code: ");
+       QMessageBox::information(this, "Error", qhm ,QMessageBox::Cancel, QMessageBox::Cancel);
+    }
+    CloseFileX(finp);
     OffFS = 0 ;
     ui->secofEdit->setText("0");
     // Detecting file(partition) system used:
@@ -383,302 +616,364 @@ void drimgwidgetbase::on_FileTrButton_clicked()
    }
     // correct CHS for case of successfull geo guess:
 }
-void drimgwidgetbase::setImageProgress(int *prog, int *prnxt, int *status, ULONG *copied, ULONG m, ULONG SecCnt)
-{
-    QCoreApplication::processEvents();
-    *copied = *copied + *status;
-    *prog = 100*m/SecCnt;
-    if (prog>prnxt) {
-       ui->progressBar1->setValue(*prog+1);
-       prnxt = prnxt+1 ;
-    }
-}
 
-int ReadSmallSect(FILE* finp, FILE* fout, bool swap, bool h256rb)
+#define SML_SEC_BUF_SIZE 0x200
+#define SML_SEC_BUF_HALF 0x100
+#define BIG_SEC_BUF_SIZE 0x10000
+#define BIG_SEC_BUF_HALF 0x08000
+#define READ_ERROR  -1
+#define WRITE_ERROR -2
+#define MEM_ERROR   -3
+#define PARAM_ERROR -4
+
+#ifdef WINDOWS
+int CopySmallSect(HANDLE f_in, HANDLE f_out, unsigned char* bufr, unsigned char* buf2, bool swap, bool h256rb, bool fromOrig)
+#else
+int CopySmallSect(FILE* f_in, FILE* f_out, unsigned char* bufr, unsigned char* buf2, bool swap, bool h256rb, bool fromOrig)
+#endif
 {
     int status, n;
-    unsigned char bufr[512];
-    unsigned char buf2[512];
-
-    if( swap && h256rb) {return -2;}
-    status = fread(bufr,1,512,finp);
-    if (status < 512) {return -1;}
-    if (h256rb) { for (n = 0; n<256; n++) { buf2[n] = bufr[n*2]; }}
-    if (swap) { for (n = 0; n<512; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }}
-    if (swap) { status = fwrite(buf2,1,512,fout); }
-    else if (h256rb) { status = fwrite(buf2,1,256,fout); }
-    else { status = fwrite(bufr,1,512,fout); }
+    if( swap && h256rb) { return PARAM_ERROR;}
+    if (h256rb && !fromOrig){
+       status = ReadFromFile(bufr,1,SML_SEC_BUF_HALF,f_in);
+       if (status < SML_SEC_BUF_HALF) { return READ_ERROR;}
+    } else {
+       status = ReadFromFile(bufr,1,SML_SEC_BUF_SIZE,f_in);
+       if (status < SML_SEC_BUF_SIZE) { return READ_ERROR;}
+    }
+    if (h256rb) {
+        if (fromOrig) { for (n = 0; n<SML_SEC_BUF_HALF; n++) { buf2[n] = bufr[n*2]; }}
+        else { for (n = 0; n<SML_SEC_BUF_HALF; n++) { buf2[n*2] = bufr[n]; }}
+    }
+    if (swap) { for (n = 0; n<SML_SEC_BUF_SIZE; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }}
+    if (swap) { if ((status = WriteToFile(buf2,1,SML_SEC_BUF_SIZE,f_out)) < SML_SEC_BUF_SIZE) {status = WRITE_ERROR;}}
+    else if (h256rb) {
+        if (fromOrig) { if ((status = WriteToFile(buf2,1,SML_SEC_BUF_HALF,f_out)) < SML_SEC_BUF_HALF) {status = WRITE_ERROR;}}
+        else { if ((status = WriteToFile(buf2,1,SML_SEC_BUF_SIZE,f_out)) < SML_SEC_BUF_SIZE) {status = WRITE_ERROR;}}
+    }
+    else { if ((status = WriteToFile(bufr,1,SML_SEC_BUF_SIZE,f_out)) < SML_SEC_BUF_SIZE) {status = WRITE_ERROR;}}
     return status;
 }
-int ReadBigSect(FILE* finp, FILE* fout, bool swap, bool h256rb)
+#ifdef WINDOWS
+int CopyBigSect(HANDLE f_in, HANDLE f_out, unsigned char* bufr, unsigned char* buf2, bool swap, bool h256rb, bool fromOrig)
+#else
+int CopyBigSect(FILE* f_in, FILE* f_out, unsigned char* bufr, unsigned char* buf2, bool swap, bool h256rb, bool fromOrig)
+#endif
 {
-    int status;
-    unsigned char bufr[0x10000];
-    unsigned char buf2[0x10000];
-
-    if( swap && h256rb) {return -2;}
-    status = fread(bufr,1,0x10000,finp);
-    if (status < 0x10000) {return -1;}
-    if (h256rb) { for (n = 0; n<0x8000; n++) { buf2[n] = bufr[n*2]; }}
-    if (swap) { for (n = 0; n<0x10000; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }}
-    if (swap) { status = fwrite(buf2,1,0x10000,fout); }
-    else if (h256rb) { status = fwrite(buf2,1,0x8000,fout); }
-    else { status = fwrite(bufr,1,0x10000,fout); }
+    int status, n;
+    if( swap && h256rb) { return PARAM_ERROR;}
+    if (h256rb && !fromOrig){
+       status = ReadFromFile(bufr,1,BIG_SEC_BUF_HALF,f_in);
+       if (status < BIG_SEC_BUF_HALF) { return READ_ERROR;}
+    } else {
+       status = ReadFromFile(bufr,1,BIG_SEC_BUF_SIZE,f_in);
+       if (status < BIG_SEC_BUF_SIZE) { return READ_ERROR;}
+    }
+    if (h256rb) {
+        if (fromOrig) { for (n = 0; n<BIG_SEC_BUF_HALF; n++) { buf2[n] = bufr[n*2]; }}
+        else { for (n = 0; n<BIG_SEC_BUF_HALF; n++) { buf2[n*2] = bufr[n]; }}
+    }
+    if (swap) { for (n = 0; n<BIG_SEC_BUF_SIZE; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }}
+    if (swap) { if((status = WriteToFile(buf2,1,BIG_SEC_BUF_SIZE,f_out)) < BIG_SEC_BUF_SIZE) {status = WRITE_ERROR;}}
+    else if (h256rb) {
+        if (fromOrig) { if((status = WriteToFile(buf2,1,BIG_SEC_BUF_HALF,f_out)) < BIG_SEC_BUF_HALF) {status = WRITE_ERROR;}}
+        else { if((status = WriteToFile(buf2,1,BIG_SEC_BUF_SIZE,f_out)) < BIG_SEC_BUF_SIZE) {status = WRITE_ERROR;}}
+    }
+    else { if((status = WriteToFile(bufr,1,BIG_SEC_BUF_SIZE,f_out)) < BIG_SEC_BUF_SIZE) {status = WRITE_ERROR;}}
     return status;
+}
+#ifdef WINDOWS
+bool drimgwidgetbase::OpenSavingFile(HANDLE* f, bool hdf)
+#else
+bool drimgwidgetbase::OpenSavingFile(FILE** f, bool hdf)
+#endif
+{
+   if (hdf) {
+      fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Hdf image files (*.hdf);;All files (*.*)"); }
+   else {
+      fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)");  }
+   if(!fileName.isEmpty()){
+      QCoreApplication::processEvents();
+      *f = OpenFileX((char*)fileName.toLatin1().data(),"wb");
+      if (*f == FILE_OPEN_FAILED) {
+         QString qhm;
+         qhm.setNum(GetLastError());
+         qhm.insert(0, "Saving file open error. (");
+         qhm.append(")\nDamn!");
+         QMessageBox::critical(this, "File open error.", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+         return false;
+      } else {
+         return true;
+      }
+   }
+   return false;
+}
+#ifdef WINDOWS
+bool drimgwidgetbase::OpenReadingFile(HANDLE* f, bool hdf)
+#else
+bool drimgwidgetbase::OpenReadingFile(FILE** f, bool hdf)
+#endif
+{
+   if (hdf) {
+       fileName = QFileDialog::getOpenFileName(this, "File to read", NULL, "Hdf image files (*.hdf);;All files (*.*)"); }
+   else {
+       fileName = QFileDialog::getOpenFileName(this, "File to read", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)"); }
+   if(!fileName.isEmpty()){
+      QCoreApplication::processEvents();
+      *f = OpenFileX((char*)fileName.toLatin1().data(),"rb");
+      if (*f == FILE_OPEN_FAILED) {
+         QString qhm;
+         qhm.setNum(GetLastError());
+         qhm.insert(0, "Reading file open error. (");
+         qhm.append(")\nDamn!");
+         QMessageBox::critical(this, "File open error.", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+         return false;
+      } else {
+         return true;
+      }
+   }
+   return false;
+}
+#ifdef WINDOWS
+bool drimgwidgetbase::OpenInputFile(HANDLE* f, char* Name, bool IsDevice)
+#else
+bool drimgwidgetbase::OpenInputFile(FILE** f, char* Name, bool IsDevice)
+#endif
+{
+   if(IsDevice) { *f = OpenDevice(Name,"rb"); }
+   else { *f = OpenFileX(Name,"rb"); }
+   if (*f == FILE_OPEN_FAILED) {
+      QString qhm;
+      qhm.setNum(GetLastError());
+      if (IsDevice) {qhm.insert(0, "Input drive open error. (");}
+      else {qhm.insert(0, "Input file open error. (");}
+      qhm.append(")\nDamn!");
+      QString qhn;
+      if (IsDevice) {qhn = "Device";} else {qhn = "File";};
+      qhn.append(" open error.");
+      QMessageBox::critical(this, qhn, qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+      return false;
+   } else {
+      return true;
+   }
+   return false;
+}
+#ifdef WINDOWS
+bool drimgwidgetbase::OpenOutputFile(HANDLE* f, char* Name, bool IsDevice)
+#else
+bool drimgwidgetbase::OpenOutputFile(FILE** f, char* Name, bool IsDevice)
+#endif
+{
+   if(IsDevice) { *f = OpenDevice(Name,"wb"); }
+   else { *f = OpenFileX(Name,"wb"); }
+   if (*f == FILE_OPEN_FAILED) {
+      QString qhm;
+      qhm.setNum(GetLastError());
+      if (IsDevice) {qhm.insert(0, "Output drive open error. (");}
+      else {qhm.insert(0, "Output file open error. (");}
+      qhm.append(")\nDamn!");
+      QString qhn;
+      if (IsDevice) {qhn = "Device";} else {qhn = "File";};
+      qhn.append(" open error.");
+      QMessageBox::critical(this, qhn, qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+      return false;
+   } else {
+      return true;
+   }
+   return false;
+}
+#ifdef WINDOWS
+long long drimgwidgetbase::CopyImage(HANDLE f_in, HANDLE f_out, ULONG SecCnt, bool swap, bool h256rb, bool fromOrig, ULONG* writtenSec)
+#else
+long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool swap, bool h256rb, bool fromOrig, ULONG* writtenSec)
+#endif
+{
+    int status = 0;
+    int prog = 0;
+    int prnxt = 1;
+    long long copied = 0;
+    unsigned char *bufr;
+    unsigned char *buf2;
+
+    *writtenSec = 0;
+    ui->progressBar1->setValue(0);
+    bufr = (unsigned char*)malloc(BIG_SEC_BUF_SIZE);
+    if (bufr == NULL) { status = MEM_ERROR; }
+    else {
+       buf2 = (unsigned char*)malloc(BIG_SEC_BUF_SIZE);
+       if (buf2 == NULL) {free(bufr); status = MEM_ERROR; }
+       else {
+
+          ULONG bg = SecCnt >> 7;
+          ULONG sm = SecCnt & 0x7F;
+          setCursor(QCursor(Qt::WaitCursor));
+          for( m = 0; m < bg; m++ ) {
+             if ((status = CopyBigSect(f_in, f_out, bufr, buf2, swap, h256rb, fromOrig)) < 0) { break; }
+             copied += status;
+             *writtenSec += 0x80;
+             prog = 98*(m << 7)/SecCnt;
+             if (prog>prnxt) {
+                ui->progressBar1->setValue(prog+1);
+                prnxt += 1;
+             }
+             QCoreApplication::processEvents();
+             if (abortf) { abortf=0 ; break; }
+          }
+          for( m = 0; m < sm; m++ ) {
+             if ((status = CopySmallSect(f_in, f_out, bufr, buf2, swap, h256rb, fromOrig)) < 0) { break; }
+             copied += status;
+             *writtenSec += 1;
+             prog = 98*(m << 7)/SecCnt;
+             if (prog>prnxt) {
+                ui->progressBar1->setValue(prog+1);
+                prnxt += 1;
+             }
+             QCoreApplication::processEvents();
+             if (abortf) { abortf=0 ; break; }
+          }
+          setCursor(QCursor(Qt::ArrowCursor));
+          free(buf2);
+       }
+       free(bufr);
+    }
+    if (status < 0) {
+       QString qhm;
+       if (status == MEM_ERROR) { qhm.setNum(GetLastError()); } else { qhm.setNum(LastIOError); }
+       if (status == READ_ERROR) {qhm.insert(0, "Reading file/drive error. (");}
+       if (status == WRITE_ERROR){qhm.insert(0, "Writing file/drive error. (");}
+       if (status == MEM_ERROR)  {qhm.insert(0, "Out of memory error. (");}
+       if (status == PARAM_ERROR){qhm.insert(0, "Parameter error. (");}
+       qhm.append(")\nDamn!");
+       QMessageBox::critical(this, "I/O error.", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+       return status;
+    }
+    return copied;
 }
 
 void drimgwidgetbase::on_readButton_clicked()
 {
-    if (act) return;
-    act = 1;
-    //Set CHS according to Edit boxes first:
-    getCHS();
-    //Get OffSet and Sector count:
-    qhm = ui->secofEdit->text() ;
-    OffFS = qhm.toLong();
-    qhm = ui->seccnEdit->text() ;
-    SecCnt = qhm.toLong();
-    qhm.setNum(SecCnt);
-    qhm.insert(0,"Sector count: ");
-    ui->inf3Label->setText(qhm);
+   ULONG WSec = 0;
+   ULONG cophh  = 0;
+   ULONG SecCnt;
+   QString qhm;
+   long long copied = 0;
 
-    getForm(); //Set format flag according to RB-s
-    if ( selected == 99 ) { //Special case - hdf to raw or vice versa
-        if ( (form==0) & (Fsub) ) // Swap L/H and save in new file
-        {
-            //fileName = KFileDialog::getSaveFileName(i18n("~"), i18n("*.raw|Raw image files\n*.img|Img image files\n*.*|All files"), this, i18n("File to save"));
-            fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)");
-            if( !fileName.isEmpty() )  {
-                QCoreApplication::processEvents();
-                int  status=0;
-                ULONG copied = 0;
+   if (act) return;
+   act = 1;
+   //Set CHS according to Edit boxes first:
+   getCHS();
+   //Get OffSet and Sector count:
+   qhm = ui->secofEdit->text() ;
+   OffFS = qhm.toLong();
+   qhm = ui->seccnEdit->text() ;
+   SecCnt = qhm.toLong();
+   qhm.setNum(SecCnt);
+   qhm.insert(0,"Sector count: ");
+   ui->inf3Label->setText(qhm);
+   QCoreApplication::processEvents();
 
-                finp = fopen(loadedF,"rb");
-                if (finp == NULL) {
-                   QMessageBox::critical(this, "File open error.", "Input file open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
-                   act=0; return;
-                }
-                fout = fopen((char*)fileName.toLatin1().data(),"wb");
-                if (fout == NULL) {
-                   QMessageBox::critical(this, "File open error.", "Output file open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
-                   fclose(finp);
-                   act=0; return;
-                }
-                ui->curopLabel->setText("Swapping L-H...");
-                fseek(finp, 0, SEEK_END) ;
-                ULONG filelen = ftell(finp); //Filelength got
-                fseek(finp, 0, SEEK_SET) ;
-                SecCnt = filelen/512 ;
-
-                //ULONG m;
-                int prog = 0;
-                int prnxt = 1;
-
-                ui->progressBar1->setValue(0);
-                setCursor(QCursor(Qt::WaitCursor));
-                if (ui->fast_rw->checkState()== Qt::Checked){
-                   ULONG bg = SecCnt >> 7;
-                   ULONG sm = SecCnt & 0x7F;
-                   for( m = 0; m < bg; m++ ) {
-                      status = ReadBigSect(finp, fout, true, false);
-                      setImageProgress(&prog, &prnxt, &status, &copied, m << 7, SecCnt);
-                      if (abortf) { abortf=0 ; break; }
-                   }
-                   for( m = 0; m < sm; m++ ) {
-                      status = ReadSmallSect(finp, fout, true, false);
-                      setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
-                      if (abortf) { abortf=0 ; break; }
-                   }
-                }else{
-                   for( m = 0; m < SecCnt; m++ ) {
-                      status = ReadSmallSect(finp, fout, true, false);
-                      setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
-                      if (abortf) { abortf=0 ; break; }
-                   }
-                }
-                fclose(finp);
-                fclose(fout);
-                setCursor(QCursor(Qt::ArrowCursor));
-                //Print out info about data transfer:
-                qhm.setNum(m);
-                qhm.append(" sectors swapped L-H into file of ");
-                QString num;
-                num.setNum(copied);
-                qhm.append(num);
-                qhm.append(" bytes.");
-                ui->curopLabel->setText(qhm);
+   getForm(); //Set format flag according to RB-s
+   if ( selected == 99 ) { //Special case - hdf to raw or vice versa
+      if ( (form==0) & (Fsub) ) // Swap L/H and save in new file
+      {
+         if (OpenSavingFile(&fout, false)){
+            if (OpenInputFile(&finp, loadedF, false)) {
+               ui->curopLabel->setText("Swapping L-H...");
+               QCoreApplication::processEvents();
+               long long filelen = GetDeviceLengthHandle(finp); //Filelength got
+               SecCnt = filelen/512 ;
+               copied = CopyImage(finp, fout, SecCnt, true, false, true, &WSec);
+               //Print out info about data transfer:
+               qhm = " sectors swapped L-H into file of ";
+               CloseFileX(finp);
             }
-        }
-        else {
-           if (form > 0) {  // contra selection here - to make conversion
-              fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)");  }
-           else {
-              fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Hdf image files (*.hdf);;All files (*.*)"); }
-           if(!fileName.isEmpty()){
-              QCoreApplication::processEvents();
-              int   status = 0;
-              ULONG copied = 0;
-              ULONG cophh  = 0;
-              finp = fopen(loadedF,"rb");
-              if (finp == NULL) {
-                 QMessageBox::critical(this, "File open error.", "Input file open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
-                 act=0; return;
-              }
-              fout = fopen((char*)fileName.toLatin1().data(),"wb");
-              if (fout == NULL) {
-                 QMessageBox::critical(this, "File open error.", "Output file open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
-                 fclose(finp);
-                 act=0; return;
-              }
-              //Message at bottom
-              ui->curopLabel->setText("File conversion...");
-              //SetDlgItemText(hDlgWnd, StaRWinf, "File conversion... Right click to abort");
-              if (form == 0) {  //if hdf wanted
-                 //Insert CHS in hdf header:
-                 rsh[28] = heads;
-                 rsh[24] = cylc;
-                 rsh[25] = cylc>>8;
-                 rsh[34] = sectr ;
-                 // if (form == 2) { //Hdf 256
-                 //   rsh[8] = 1; }
-                 // else   // no hdf 256 support here
-                 rsh[8] = 0;
-                 for( n = 0; n < 128; n++ ) {
-                    fputc(rsh[n],fout);
-                 }
-                 cophh = 128;
-              }
-              else{
-                 fseek(finp,128,0) ; // just skip hdf header
-              }
-              int prog = 0;
-              int prnxt = 1;
-              ui->progressBar1->setValue(0);
-              //SendMessage(hPb, PBM_SETPOS, 0, 0);if (!act) {
-              setCursor(QCursor(Qt::WaitCursor));
-              if (ui->fast_rw->checkState()== Qt::Checked){
-                 ULONG bg = SecCnt >> 7;
-                 ULONG sm = SecCnt & 0x7F;
-                 for( m = 0; m < bg; m++ ) {
-                    status = ReadBigSect(finp, fout, false, false);
-                    setImageProgress(&prog, &prnxt, &status, &copied, m << 7, SecCnt);
-                    if (abortf) { abortf=0 ; break; }
-                 }
-                 for( m = 0; m < sm; m++ ) {
-                    status = ReadSmallSect(finp, fout, false, false);
-                    setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
-                    if (abortf) { abortf=0 ; break; }
-                 }
-              }else{
-                 for( m = 0; m < SecCnt; m++ ) {
-                    status = ReadSmallSect(finp, fout, false, false);
-                    setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
-                    if (abortf) { abortf=0 ; break; }
-                 }
-              }
-              fclose(finp);
-              fclose(fout);
-              setCursor(QCursor(Qt::ArrowCursor));
-              //Print out info about data transfer:
-              qhm.setNum(m);
-              qhm.append(" sectors copied from img. file into file of ");
-              QString num;
-              num.setNum(copied + cophh);
-              qhm.append(num);
-              qhm.append(" bytes.");
-              ui->curopLabel->setText(qhm);
-           } // filesel success end
-       } // else after Fsub if end
-   } // vice versa end
-    // Here comes read from drives, medias...:
+            CloseFileX(fout);
+         }
+      }
+      else {
+         if(OpenSavingFile(&fout, (form == 0) /*contra selection here! - to make conversion*/ )){
+             if (OpenInputFile(&finp, loadedF, false)) {
+               //Message at bottom
+               ui->curopLabel->setText("File conversion...");
+               QCoreApplication::processEvents();
+               if (form == 0) {  //if hdf wanted
+                  //Insert CHS in hdf header:
+                  rsh[28] = heads;
+                  rsh[24] = cylc;
+                  rsh[25] = cylc>>8;
+                  rsh[34] = sectr ;
+                  // if (form == 2) { //Hdf 256
+                  //   rsh[8] = 1; }
+                  // else   // no hdf 256 support here
+                  rsh[8] = 0;
+                  for( n = 0; n < 128; n++ ) {
+                     PutCharFile(rsh[n],fout);
+                  }
+                  cophh = 128;
+               }
+               else{
+                  SeekFileX(finp,128,0) ; // just skip hdf header
+               }
+               copied = CopyImage(finp, fout, SecCnt, false, false, true, &WSec);
+               //Print out info about data transfer:
+               qhm = " sectors copied from img file into file of ";
+               CloseFileX(finp);
+            }
+            CloseFileX(fout);
+         }
+      }
+   }
+   // Here comes read from drives, medias...:
    else{
-        if (form == 0) {  // contra selection here - to make conversion
-           fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)"); }
-        else {
-           fileName = QFileDialog::getSaveFileName(this, "File to save", NULL, "Hdf image files (*.hdf);;All files (*.*)"); }
-        if( !fileName.isEmpty() )  {
-            QCoreApplication::processEvents();
-            int  status=0;
-            ULONG copied = 0;
-            ULONG cophh = 0;
-
-            for (k=0;k<9;k++){ physd[k] = detDev[k][selected]; }
-            ui->inf4Label->setText(physd); //testing!!!
-            finp = fopen(physd,"rb");
-            if (finp == NULL) {
-                QMessageBox::critical(this, "File open error.", "Input file open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
-                act=0; return;
-            }
-            fout = fopen((char*)fileName.toLatin1().data(),"wb");
-            if (fout == NULL) {
-               QMessageBox::critical(this, "File open error.", "Output file open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
-               fclose(finp);
-               act=0; return;
-            }
+      if (OpenSavingFile(&fout, (form > 0))){
+         for (k=0;k<13;k++){ physd[k] = detDev[k][selected]; }
+         ui->inf4Label->setText(physd); //testing!!!
+         if (OpenInputFile(&finp, physd, true)) {
             ui->curopLabel->setText("Reading from drive...");
+            QCoreApplication::processEvents();
             if (form >0) {  //if hdf wanted
-              //Insert CHS in hdf header:
-              rsh[28] = heads;
-              rsh[24] = cylc;
-              rsh[25] = cylc>>8;
-              rsh[34] = sectr ;
-              rsh[8]  = (form == 2) ? 1 : 0;
-              for( n = 0; n < 128; n++ ) {
-                 fputc(rsh[n],fout);
-              }
-              cophh = 128;
+               //Insert CHS in hdf header:
+               rsh[28] = heads;
+               rsh[24] = cylc;
+               rsh[25] = cylc>>8;
+               rsh[34] = sectr ;
+               rsh[8]  = (form == 2) ? 1 : 0;
+               for( n = 0; n < 128; n++ ) {
+                  PutCharFile(rsh[n],fout);
+               }
+               cophh = 128;
             }
-            int prog = 0;
-            int prnxt = 1;
-            fseek(finp, OffFS*512, SEEK_SET);
-            ui->progressBar1->setValue(0);
-            setCursor(QCursor(Qt::WaitCursor));
-            //return;
-            if (ui->fast_rw->checkState()== Qt::Checked){
-               ULONG bg = SecCnt >> 7;
-               ULONG sm = SecCnt & 0x7F;
-               for( m = 0; m < bg; m++ ) {
-                  status = ReadBigSect(finp, fout, Fsub, form == 2);
-                  setImageProgress(&prog, &prnxt, &status, &copied, m << 7, SecCnt);
-                  if (abortf) { abortf=0 ; break; }
-               }
-               for( m = 0; m < sm; m++ ) {
-                  status = ReadSmallSect(finp, fout, Fsub, form == 2);
-                  setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
-                  if (abortf) { abortf=0 ; break; }
-               }
-            }else{
-               for( m = 0; m < SecCnt; m++ ) {
-                  status = ReadSmallSect(finp, fout, Fsub, form == 2);
-                  setImageProgress(&prog, &prnxt, &status, &copied, m, SecCnt);
-                  if (abortf) { abortf=0 ; break; }
-               }
-            }
-            fclose(finp);
-            fclose(fout);
-            setCursor(QCursor(Qt::ArrowCursor));
-
-            qhm.setNum(m);
-            qhm.append(" sectors copied from img. file into file of ");
-            QString num;
-            num.setNum(copied + cophh);
-            qhm.append(num);
-            qhm.append(" bytes.");
-            ui->curopLabel->setText(qhm);
-        }
-    }
-    act=0;
+            SeekFileX(finp, OffFS*512, SEEK_SET);
+            copied = CopyImage(finp, fout, SecCnt, Fsub, form == 2, true, &WSec);
+            qhm = " sectors copied from device into file of ";
+            CloseFileX(finp);
+         }
+         CloseFileX(fout);
+      }
+   }
+   if (WSec == SecCnt) { ui->progressBar1->setValue(100);}
+   QString num;
+   num.setNum(WSec);
+   qhm.insert(0,num);
+   num.setNum(copied + cophh);
+   qhm.append(num);
+   qhm.append(" bytes.");
+   ui->curopLabel->setText(qhm);
+   act=0;
 }
 
 void drimgwidgetbase::on_openIfButton_clicked()
 {
+    unsigned char bufr[640];
+    unsigned char bufsw[512];
+
     if (act) { return; }
     #ifdef FRANKS_DEBUG
     {
       #ifdef WINDOWS
-      fout = fopen("D:\\Projekte\\tools\\DrImg\\testimage.img","rb");
+      fout = OpenFileX("D:\\Projekte\\tools\\DrImg\\testimage.img","rb");
       #else
-      fout = fopen("/home/frank/Projekte/ATARI/DrImg/testimage.img","rb");
+      fout = OpenFileX("/home/frank/Projekte/ATARI/DrImg/testimage.img","rb");
       #endif
     #else
     getForm();
@@ -688,19 +983,18 @@ void drimgwidgetbase::on_openIfButton_clicked()
         fileName = QFileDialog::getOpenFileName(this, "File to load", NULL, "Hdf image files (*.hdf);;All files (*.*)"); }
     if( !fileName.isEmpty() )
     {
-      fout = fopen((char*)fileName.toLatin1().data(),"rb");
+      fout = OpenFileX((char*)fileName.toLatin1().data(),"rb");
     #endif
-      if (fout == NULL) {
+      if (fout == FILE_OPEN_FAILED) {
           QMessageBox::critical(this, "File open error.", "File open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
           return;
       }
       //Load 512+128 bytes
       //status=
-      if (fread(bufr,1,640,fout)) {}
+      if (ReadFromFile(bufr,1,640,fout)) {}
       // get filelen
-      fseek(fout, 0, SEEK_END) ;
-      filelen = ftell(fout); //Filelength got
-      fclose(fout);
+      filelen = GetFileLength64(fout);
+      CloseFileX(fout);
       #ifdef FRANKS_DEBUG
       #ifdef WINDOWS
       strcpy(loadedF, "D:\\Projekte\\tools\\DrImg\\testimage.img");
@@ -836,65 +1130,49 @@ removh:
 
 void drimgwidgetbase::on_writeButton_clicked()
 {
+   ULONG fsecc;
+   ULONG cophh = 0;
+
    if (act) { return; }
    act = 1;
    getForm() ;
-   if (form == 0) {
-      fileName = QFileDialog::getOpenFileName(this, "File to write", NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)"); }
-   else {
-      fileName = QFileDialog::getOpenFileName(this, "File to write", NULL, "Hdf image files (*.hdf);;All files (*.*)"); }
-   if( !fileName.isEmpty() )
+   if( OpenReadingFile(&finp,(form > 0)) )
    {
-      if( !fileName.isEmpty() )  {
-         QCoreApplication::processEvents();
-         if ( selected==99 ) { qhm = "Write to selected file!"; }
-         else {
-            qhm.setNum(selected);
-            qhm.insert(0, "Write to selected drive ");
+      QCoreApplication::processEvents();
+      if ( selected==99 ) { qhm = "Write to selected file!"; }
+      else {
+         qhm.setNum(selected);
+         qhm.insert(0, "Write to selected drive ");
+      }
+      qhm.append("\nAre you sure?");
+      // File to drive
+      if (QMessageBox::question(this, "Writing", qhm, QMessageBox::Yes|QMessageBox::No, QMessageBox::No) == QMessageBox::No)
+      { act=0; return; }
+      if ( selected==99) {
+         OpenOutputFile(&fout, loadedF, false);
+      }
+      else{
+         for (k=0; k<9; k++) physd[k] = detDev[k][selected];
+         if (( ov2ro ) && ( SecCnt>2097152)) {
+            QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
+            act=0;
+            return;
          }
-         qhm.append("\nAre you sure?");
-         // File to drive
-         if (QMessageBox::question(this, "Writing", qhm, QMessageBox::Yes|QMessageBox::No, QMessageBox::No) == QMessageBox::No)
-         { act=0; return; }
-         int hDevice;            // handle to the drive or file for write on
-         if ( selected==99) {
-            hDevice = open(loadedF, O_WRONLY);
-         }
-         else{
-            for (k=0; k<9; k++) physd[k] = detDev[k][selected];
-            if (( ov2ro ) && ( SecCnt>2097152)) {
-               QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
-               act=0;
-               return;
-             }
-             hDevice = open(physd, O_WRONLY); // | O_FSYNC );
-         }
-         if (hDevice <0){ // cannot open the drive
-            QMessageBox::critical(this, "Drive open error.", "Drive open error.\nRoot?",QMessageBox::Cancel, QMessageBox::Cancel);
-            act=0; return;
-         }
-         // Open image file for read:
-         fout = fopen((char*)fileName.toLatin1().data(),"rb");
-         if (fout == NULL) {
-         //printf("File open error!\n");
-            fileclose(hDevice);
-            act=0; return ;
-         }
+         OpenOutputFile(&fout, physd, true);
+      }
+      if (fout != FILE_OPEN_FAILED){ // cannot open the drive
          if ( selected==99) ui->curopLabel->setText("Writing to file...");
          else ui->curopLabel->setText("Writing to drive...");
 
-         setCursor(QCursor(Qt::WaitCursor));
-         ULONG cophh = 0;
          //SecCnt = exdl[selected];  //Already set **** - Maybe changed.... see it
          if (form > 0) {  //if hdf to load
             cophh = 128;
          }
 
-         fseek(fout, 0, SEEK_END) ;
-         ULONG filelen;
-         filelen = ftell(fout); //Filelength got
+         long long filelen = GetFileLength64(finp);
+         //Filelength got
 
-         fseek(fout, cophh, SEEK_SET) ; // Set to 0 by raw, or to 128 by hdf
+         SeekFileX(finp, cophh, SEEK_SET) ; // Set to 0 by raw, or to 128 by hdf
          if (form == 2)  fsecc = (filelen-cophh)/256 ;
          else fsecc = (filelen-cophh)/512 ;
          qhm = ui->seccnEdit->text() ;
@@ -903,64 +1181,26 @@ void drimgwidgetbase::on_writeButton_clicked()
          qhm.setNum(fsecc);
          ui->inf4Label->setText(qhm) ; // testing!!!
 
-         //DWORD bytesw;
-         //ULONG m;
-         int prog = 0;
-         int prnxt = 1;
-         int  status=0;
-         ULONG copied = 0;
-
-         //*** Need to get value from edLine!!!
+         // Need to get value from edLine!!!
          qhm = ui->secofEdit->text() ;
          OffFS = qhm.toLong();
-         lseek(hDevice, OffFS*512, SEEK_SET );
-         ui->progressBar1->setValue(0);
-         for( m = 0; m < fsecc; m++ ) {
-            if (form == 2) {
-               status=fread(buf2,1,256,fout);
-               if (status<256) break;
-               for (n = 0; n<256; n++)  bufr[n*2] = buf2[n];
-            }
-            else {
-               status=fread(bufr,1,512,fout);
-               if (status<512) break;
-            }
-            if (Fsub) {
-               // Swap L/H
-               for (n = 0; n<512; n=n+2) { buf2[n] = bufr[n+1]; buf2[n+1] = bufr[n] ; }
-               copied = copied + write(hDevice,buf2,512) ;
-            }
-            else{
-               copied = copied+write(hDevice,bufr,512);
-            }
-            QCoreApplication::processEvents();
-            if (abortf) { abortf=0 ; break; }
-            prog = 100*m/fsecc;
-            if (prog>prnxt) {
-               // Workaround because of delayed write
-               // SYNC mode is too slow
-               if (selected!=99){
-                  n = fileclose(hDevice);
-                  hDevice = open(physd, O_WRONLY ); // To ensure correct progress bar when writing to Flash media
-               }
-               lseek(hDevice, OffFS*512+copied, SEEK_SET ); // restore pos
-               ui->progressBar1->setValue(prog+1);
-               prnxt = prnxt+1 ;
-            }
-         }
-         fclose(fout);
-         n = fileclose(hDevice);
+         SeekFileX(fout, OffFS*512, SEEK_SET );
+         ULONG WSec = 0;
+         long long copied = CopyImage(finp, fout, fsecc, Fsub, form == 2, false, &WSec);
          setCursor(QCursor(Qt::ArrowCursor));
          //Print out info about data transfer:
          qhm.setNum(copied);
          qhm.append(" bytes (");
          QString num;
-         num.setNum(m);
+         num.setNum(WSec);
          qhm.append(num);
          if (selected==99) qhm.append(" sectors ) written to file.");
          else qhm.append(" sectors ) written to drive.");
          ui->curopLabel->setText(qhm);
+         if (WSec == fsecc) { ui->progressBar1->setValue(100);}
+         CloseFileX(fout);
       }
+      CloseFileX(finp);
    }
    act = 0;
 }
@@ -973,6 +1213,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
 {
    int  status;
    int  secsize;
+   unsigned char bufr[512];
 
    if (act) { return; }
    act=1;
@@ -988,28 +1229,14 @@ void drimgwidgetbase::on_creimfButton_clicked()
    //inf5Label->setText( " ");  // Clear
    OffFS = 0 ;
    ui->secofEdit->setText( "0" );
-
-   // Open fileselector for giving name:
-   if (form == 0){
-      fileName = QFileDialog::getSaveFileName(this, tr("File to save"), NULL, "Raw image files (*.raw);;Img image files (*.img);;All files (*.*)");
-   }
-   else {
-      fileName = QFileDialog::getSaveFileName(this, tr("File to save"), NULL, "Hdf image files (*.hdf);;All files (*.*)");
-   }
-   if( !fileName.isEmpty() )  {
+   if( OpenSavingFile(&fout,(form > 0)) )  {
       //update() ;
-      QCoreApplication::processEvents();
-      //UpdateWindow(hDlgWnd);
-      fout = fopen((char*)fileName.toLatin1().data(),"wb");
-      if (fout == NULL) {
-         act=0;
-         return;
-      }
       int prog = 0;
       int prnxt = 1;
       ui->curopLabel->setText( "Creating image file...");
       ui->progressBar1->setValue( 0 );
       setCursor(QCursor(Qt::WaitCursor));
+      QCoreApplication::processEvents();
       m = 0 ;
       if ( form > 0 ) { // HDF images
          // Set values in HDF header:
@@ -1018,7 +1245,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
          rsh[25] = cylc>>8;
          rsh[34] = sectr ;
          rsh[8] = (form == 2) ? 1 : 2; //Hdf 256
-         status = fwrite(rsh,1,128,fout);
+         status = WriteToFile(rsh,1,128,fout);
          if (status != 128) { /*todo*/ }
          m = m+128 ;
       }
@@ -1028,7 +1255,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
       for (n=0;n<secsize;n++){ bufr[n] = 0 ; }
       g = sectr*heads*cylc ;
       for (f=0;f<g;f++) {
-         status = fwrite(bufr,1,secsize,fout);
+         status = WriteToFile(bufr,1,secsize,fout);
          if (status != secsize) { /*todo*/ }
          QCoreApplication::processEvents();
          m = m+secsize ;
@@ -1041,7 +1268,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
          }
       }  // some check needed!
       //Close file:
-      fclose(fout);
+      CloseFileX(fout);
       setCursor(QCursor(Qt::ArrowCursor));
       for( n = 0; n < 60; n++ ) dstr[n] = 0; //Clear string
        qhm.setNum(m);

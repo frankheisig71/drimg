@@ -4,6 +4,11 @@
 #include <QWidget>
 #include <QModelIndex>
 #include "gemddlg.h"
+#include <stdio.h>
+#ifdef WINDOWS
+#include <windows.h>
+#include <winioctl.h>
+#endif
 
 typedef unsigned char  byte;
 typedef unsigned int   UINT;
@@ -24,28 +29,33 @@ public:
     void detSDloop();
     void getCHS();
     void getForm();
-    void detSD();
-    void setImageProgress(int *prog, int *prnxt, int *status, ULONG *copied, ULONG m, ULONG SecCnt);
+    int  detSD();
+    #ifdef WINDOWS
+    bool OpenSavingFile(HANDLE* f, bool hdf);
+    bool OpenReadingFile(HANDLE* f, bool hdf);
+    bool OpenInputFile(HANDLE* f, char* Name, bool IsDevice);
+    bool OpenOutputFile(HANDLE* f, char* Name, bool IsDevice);
+    long long CopyImage(HANDLE f_in, HANDLE f_out, ULONG SecCnt, bool swap, bool h256rb, bool fromOrig, ULONG* writtenSec);
+    #else
+    bool OpenSavingFile(FILE** f, bool hdf);
+    bool OpenReadingFile(FILE** f, bool hdf);
+    bool OpenInputFile(FILE** f, char* Name, bool IsDevice);
+    bool OpenOutputFile(FILE** f, char* Name, bool IsDevice);
+    long long CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool swap, bool h256rb, bool fromOrig, ULONG* writtenSec);
+    #endif
+
 
 private slots:
     void on_refrButton_clicked();
     void on_quitButton_clicked();
     void on_listBox1_clicked(const QModelIndex &index);
-
     void on_FileTrButton_clicked();
-
     void on_readButton_clicked();
-
     void on_openIfButton_clicked();
-
     void on_writeButton_clicked();
-
     void on_ov2roCB_clicked();
-
     void on_swapCB_clicked();
-
     void on_abortButton_clicked();
-
     void on_creimfButton_clicked();
 
 private:

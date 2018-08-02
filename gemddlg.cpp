@@ -46,14 +46,13 @@ extern char Swf ; // Sub filesystem 1-Swapped High/Low
 extern int Fsub ;  // Swap request flag - by read or write drive
 extern QString fileName;
 extern QString op, qhm;
-extern FILE *finp, *fout, *ftout, *flout ;
 extern ULONG filelen, u ;
 extern ULONG ChaSecCnt ;
 
 extern int selected;
-extern int c,k,i, o, p, s, fscanp ;
-extern char detDev[9][16] ;
-extern char physd[9];
+extern int o, p, s, fscanp ;
+extern char detDev[13][16] ;
+extern char physd[13];
 extern char loadedF[256] ;
 extern int form;
 extern int clust ;
@@ -68,15 +67,48 @@ extern UINT sectr ;
 extern ULONG cylc ;
 extern UINT heads ;
 extern bool ov2ro;
-
-extern FILE *finp, *fout, *ftout, *flout ;
+/*
 extern unsigned char bufr[640];
 extern unsigned char  buf2[524];
 extern unsigned char  bufsw[524];
 extern QString litet;
+*/
+#ifdef WINDOWS
+extern HANDLE OpenFileX(const char* name, const char * mode);
+extern HANDLE OpenDevice(const char* name, const char * mode);
+extern void CloseFileX(HANDLE f);
+extern int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh);
+extern int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh);
+extern int PutCharFile(const int data, HANDLE fh);
+extern long long GetDeviceLengthHandle(HANDLE fh);
+extern long long GetDeviceLength(const char* devName);
+extern long long GetFileLength64(HANDLE fh);
+extern long GetFileLength(HANDLE fh);
+extern long SeekFileX(HANDLE fh, int offset, int origin);
+extern long long SeekFileX64(HANDLE fh, long long offset, int origin);
+#else
+extern FILE* OpenDevice(const char* name, const char * mode);
+extern FILE* OpenFileX(const char* name, const char * mode);
+extern void CloseFileX(FILE* f);
+extern int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh);
+extern int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh);
+extern int PutCharFile(const int data, FILE* fh);
+extern long long GetDeviceLengthHandle(FILE* fh);
+extern long long GetDeviceLength(const char* devName);
+extern long long GetFileLength64(FILE* fh);
+extern long GetFileLength(FILE* fh);
+extern long SeekFileX(FILE* fh, int offset, int origin);
+extern long long SeekFileX64(FILE* fh, long long offset, int origin);
+#endif
 
+#ifdef WINDOWS
+HANDLE fhdl, fhout;
+#define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
+#else
+FILE *fhdl, *fhout;
+#define FILE_OPEN_FAILED NULL
+#endif
 
-int drih;
 ULONG epos, eposIn, stfilelen, copied ;
 ULONG Gpartp[24] ; // GemDos part postions
 ULONG Gparsiz[24] ; // GemDos part sizes
@@ -149,21 +181,6 @@ GemdDlg::~GemdDlg()
     delete ui;
 }
 
-// This is because of function name 'close' conflict!!!!!
-int fileopen(const char* fname, const ULONG flags)
-{
-    int fd;
-    fd = open(fname, flags);
-    #ifdef WINDOWS
-    _setmode(fd, _O_BINARY);
-    #endif
-    return fd;
-}
-int fileclose(int fd)
-{
-   return close(fd);
-}
-
 void GenerateFileName(unsigned char* buf, int offs, QString *name)
 {
    char nstr[60];
@@ -197,26 +214,28 @@ void GemdDlg::OpenDialog()
 {
    int p;
    unsigned long m, n;
+   unsigned char bufr[512];
+   unsigned char buf2[512];
 
    // Open file or physical drive:
    if (selected<16){
-      for (k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
+      for (int k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
       if ((ov2ro)  && ( SecCnt>2097152 )) {
-         drih = fileopen(physd, O_RDONLY );
+         fhdl = OpenDevice(physd, "rb" );
       }
       else{
-         drih = fileopen(physd, O_RDWR  );
+         fhdl = OpenDevice(physd, "rwb" );
       }
    }
    else{
-      drih = fileopen(loadedF, O_RDWR  );
+      fhdl = OpenFileX(loadedF, "rwb" );
    }
-   if (drih <0) {
+   if (fhdl == FILE_OPEN_FAILED) {
       QMessageBox::critical(this, "Error", "Drive/file open error ", QMessageBox::Cancel, QMessageBox::Cancel);
       return; //gemdpex
    }
    // Load bootsector
-   read(drih, bufr, 512);
+   ReadFromFile(bufr, 1, 512, fhdl);
    if ( Filesys == 13 ){
       Gpartp[0] = 0 ;
       m = bufr[19]+256*bufr[20] ;
@@ -239,7 +258,7 @@ void GemdDlg::OpenDialog()
    // And in extend. partitions
    if ( Filesys == 1 ) {
       p = 0 ; // Partition counter (index)
-      for (i=0x1BE;i<0x1EF;i=i+16) { // Four primary slots
+      for (int i=0x1BE;i<0x1EF;i=i+16) { // Four primary slots
          if (( bufr[i+4] == 6 ) || ( bufr[i+4] == 4 )) {
             // Position, absolute, in sectors
             Gpartp[p] = bufr[i+8]+bufr[i+9]*256 + bufr[i+10]*65536 +bufr[i+11]*16777216 ;
@@ -264,8 +283,8 @@ void GemdDlg::OpenDialog()
             epos = bufr[i+8]+bufr[i+9]*256 + bufr[i+10]*65536 +bufr[i+11]*16777216 ;
             do{
                strcpy(dstr,"Ext. ");
-               lseek(drih, epos*512, 0);
-               read(drih, buf2, 512);
+               SeekFileX64(fhdl, epos*512, 0);
+               ReadFromFile(buf2, 1, 512, fhdl);
                // First entry must be regular partition
                if (( buf2[0x1C2] == 6 ) || ( buf2[0x1C2] == 4 )){
                   //Get pos, absolute:
@@ -300,11 +319,12 @@ void GemdDlg::OpenDialog()
    else {
       if (Swf)
       {   // Swap low/high bytes:
+         unsigned char k;
          for (n=0;n<512;n=n+2)
          { k=bufr[n] ; bufr[n]=bufr[n+1];bufr[n+1]=k; }
       }
       p = 0 ; // Partition counter (index)
-      for (i=0x1C6;i<0x1F7;i=i+12) { // Four primary slots
+      for (int i=0x1C6;i<0x1F7;i=i+12) { // Four primary slots
          if (  ((bufr[i+1] == 'G') & (bufr[i+2] == 'E') & (bufr[i+3] == 'M')) | ((bufr[i+1] == 'B') & (bufr[i+2] == 'G') & (bufr[i+3] == 'M'))) {
             // Primary GemDos part
             // Position, absolute, in sectors
@@ -325,10 +345,11 @@ void GemdDlg::OpenDialog()
             eposIn = bufr[i+7]+bufr[i+6]*256 + bufr[i+5]*65536 +bufr[i+4]*16777216 ;
             epos = eposIn ;
 gemsfp1:
-            lseek(drih, epos*512, 0 );
-            read(drih, buf2, 512);
+            SeekFileX64(fhdl, epos*512, 0);
+            ReadFromFile(buf2, 1, 512, fhdl);
             if (Swf) {
                // Swap low/high bytes:
+               unsigned char k;
                for (n=0;n<512;n=n+2){
                   k=buf2[n];
                   buf2[n]=buf2[n+1];
@@ -364,12 +385,15 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
 {
    unsigned int  n, m;
    unsigned char k;
+   unsigned char buf2[512];
 
    selP = index.row();
    //Load bootsector of partition:
    PartStartPosition =  Gpartp[selP]*512 ;
-   lseek(drih, PartStartPosition, 0 );
-   read(drih, buf2, 512);
+   SeekFileX64(fhdl, PartStartPosition, 0);
+   ReadFromFile(buf2, 1, 512, fhdl);
+   //lseek(drih, PartStartPosition, 0 );
+   //read(drih, buf2, 512);
    if (Swf)
    {   // Swap low/high bytes:
        for (unsigned int n=0;n<512;n=n+2)
@@ -405,8 +429,10 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    ui->partinfLab->setText(qhm);
    #endif
    // Load FAT #1
-   lseek(drih, PartStartPosition+PartSectorSize*PartReservedSectors, 0) ;
-   read(drih, PartFATbuffer, PartSectorsPerFAT*PartSectorSize);
+   SeekFileX64(fhdl, PartStartPosition+PartSectorSize*PartReservedSectors, 0);
+   ReadFromFile(PartFATbuffer, 1, PartSectorsPerFAT*PartSectorSize, fhdl);
+   //lseek(drih, PartStartPosition+PartSectorSize*PartReservedSectors, 0) ;
+   //read(drih, PartFATbuffer, PartSectorsPerFAT*PartSectorSize);
    if (Swf)
    {   // Swap low/high bytes:
        for (m=0;m<PartSectorsPerFAT*PartSectorSize;m=m+2){
@@ -467,10 +493,13 @@ void GemdDlg::on_filesLB_clicked(const QModelIndex &index)
 
 void GemdDlg::loadroot()
 {
-   lseek(drih, PartStartPosition+PartFirstRootDirSector*PartSectorSize, 0 );
-   read(drih, dirbuf, PartRootDirSectors*PartSectorSize);
+   SeekFileX64(fhdl, PartStartPosition+PartFirstRootDirSector*PartSectorSize, 0);
+   ReadFromFile(dirbuf, 1, PartRootDirSectors*PartSectorSize, fhdl);
+   //lseek(drih, PartStartPosition+PartFirstRootDirSector*PartSectorSize, 0 );
+   //read(drih, dirbuf, PartRootDirSectors*PartSectorSize);
    if (Swf)
    {   // Swap low/high bytes:
+      unsigned char k;
       for (unsigned long m=0;m<PartRootDirSectors*PartSectorSize;m=m+2){
          k=dirbuf[m] ; dirbuf[m]=dirbuf[m+1];dirbuf[m+1]=k;
       }
@@ -551,48 +580,59 @@ void FATfreeCluster(unsigned int Cluster)
 int ReadSectors( int StartSector, int Count, unsigned char *Buffer)
 {
    int d,e,j;
+   unsigned char buf[512];
 
-   lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
+   SeekFileX64(fhdl, PartStartPosition+StartSector*PartSectorSize, 0);
+   //lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
    if (Swf) { j = Count*PartSectorSize/512 ;
       for (e=0;e<j;e++)
-      { read(drih, bufsw, 512);
-         for (d=0;d<512;d=d+2) { Buffer[d+e*512]=bufsw[d+1] ; Buffer[d+1+e*512]=bufsw[d]; }
+      {
+         ReadFromFile(buf, 1, 512, fhdl);
+         //read(drih, buf, 512);
+         for (d=0;d<512;d=d+2) { Buffer[d+e*512]=buf[d+1] ; Buffer[d+1+e*512]=buf[d]; }
       }
    }
    else {
-      read(drih, Buffer, Count*PartSectorSize);
+      ReadFromFile(Buffer, 1, Count*PartSectorSize, fhdl);
+      //read(drih, Buffer, Count*PartSectorSize);
    }
    return 1;
 }
 ULONG WriteSectors( int StartSector, int Count, unsigned char *Buffer)
 {
-    lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
+    unsigned char buf[512];
+
+    SeekFileX64(fhdl, PartStartPosition+StartSector*PartSectorSize, 0);
+    //lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
     if (Swf) {
         j = Count*PartSectorSize/512;
         u = 0;
         for (e=0;e<j;e++) {
            for (d=0;d<512;d=d+2) {
-               bufsw[d+1]=Buffer[d+e*512] ;
-               bufsw[d]=Buffer[d+1+e*512];
+               buf[d+1]=Buffer[d+e*512] ;
+               buf[d]=Buffer[d+1+e*512];
            }
-          u = u+ write(drih, bufsw, 512);
+           u = u + WriteToFile(buf, 1, 512, fhdl);
+           //u = u+ write(drih, buf, 512);
         }
         return u ;
     }
-    return  write(drih, Buffer, Count*PartSectorSize);
+    return WriteToFile(Buffer, 1, Count*PartSectorSize, fhdl);
+    //return  write(drih, Buffer, Count*PartSectorSize);
 }
 
 void GemdDlg::subdirh()
 {
+   int k;
+
    dstr[11] = 0 ;
    ClunOfParent = staclu ; // Keep this value for SubDIR creation
    if ( PartSubDirLevel ) {
-      int spafl;
+      int spafl, c = 0;
       subpath[0] = '/';
-      c=1;
       for(o=0;o<PartSubDirLevel;o++){
          spafl = 0;
-         for(i=0;i<11;i++) {
+         for(int i=0;i<11;i++) {
             k = subnam[i][o+1] ;
             if(k){
                if (k == ' ' ){
@@ -795,11 +835,6 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    unsigned int FileLength, msapos = 0;
    int RemainingBytes;
 
-   #ifdef WINDOWS
-   HANDLE flout;
-   DWORD  written;
-   wchar_t wtext[256];
-   #endif
    //load file from drive/image:
    StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
    FileLength = 16777216*DirBuffer[EntryPos+31]+65536*DirBuffer[EntryPos+30]+256*DirBuffer[EntryPos+29]+DirBuffer[EntryPos+28] ;
@@ -807,14 +842,8 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
    ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
    // open save file:
-   #ifdef WINDOWS
-   mbstowcs(wtext, dstr, strlen(dstr)+1);
-   flout = CreateFile(wtext, GENERIC_WRITE + GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-   if (flout == INVALID_HANDLE_VALUE) {
-   #else
-   flout = fopen(dstr,"wb");
-   if (flout == NULL) {
-   #endif
+   fhout = OpenFileX(dstr, "wb");
+   if (fhout == FILE_OPEN_FAILED) {
       QMessageBox::critical(this, dstr, "File open error ", QMessageBox::Cancel, QMessageBox::Cancel);
       ui->errti->setText("Error!");
 	  return 1;
@@ -825,13 +854,10 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       FATlookUp(StartCluster, &NextCluster, &FileSector);
       ReadSectors(FileSector, PartSectorsPerCluster, trasb);
       if ( RemainingBytes<(PartSectorSize*PartSectorsPerCluster) ) { tosave = RemainingBytes; }
-      #ifdef WINDOWS
-      if (WriteFile(flout, trasb, tosave, &written, NULL)) {
+      ULONG written;
+      if ((written = WriteToFile(trasb, 1, tosave, fhout)) > 0) {
         msapos = msapos + written;
       }
-      #else
-      msapos = msapos+fwrite(trasb, 1, tosave, flout);
-      #endif
       RemainingBytes = RemainingBytes-PartSectorSize*PartSectorsPerCluster;
       doloop = ( RemainingBytes >= 0 ) && ( NextCluster <= 0xfff0 );
       if (doloop) {StartCluster = NextCluster;}
@@ -843,17 +869,13 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    else if (!timestCur) {
       SetLocalFileDateTime(fdat, ftim
                 #ifdef WINDOWS
-                , flout
+                , fhout
                 #else
                 , dstr
                 #endif
                 );
    }
-   #ifdef WINDOWS
-   CloseHandle(flout);
-   #else
-   fclose(flout);
-   #endif
+   CloseFileX(fhout);
    return rc;
 }
 
@@ -1306,7 +1328,7 @@ void GemdDlg::on_ExtractFiles_clicked()
 
 int PadFileName(char *Instr, char* Outstr)
 {
-   int n, k, c;
+   int i, n, k, c;
    // Look where is .
    k = strlen(Instr);
    for (n=0; n<k; n++) {
@@ -1335,12 +1357,12 @@ int MakeFATFileName(char* SrcFileName, char* DestFileName)
    length = strlen(SrcFileName) ;
    // extract filename only:
    p = 0;
-   for (c=length-1; c>0; c--)
+   for (c=length-1; c>0; c--){
       #ifdef WINDOWS
-      if ( SrcFileName[c] == '\\' ) break  ;
-      #else
-      if ( SrcFileName[c] == '/' ) break  ;
+      if ( SrcFileName[c] == '\\' ){break;}
       #endif
+      if ( SrcFileName[c] == '/' ) {break;}
+   }
    c++ ;
    while (c<length)
    {
@@ -1480,7 +1502,7 @@ bool GemdDlg::AddFileToCurrentDir(char* FilePathName, unsigned char* DirBuffer)
 {
    char   FATFileName[256];
    struct stat fparms ;
-   unsigned int FileByteLength;
+   unsigned int k, FileByteLength;
    unsigned int n, m, FileClusterCount, EntryPos, FileSector, CurrentFileCluster, PreviousFileCluster;
    FILE *inFile;
 
@@ -1662,7 +1684,7 @@ void GemdDlg::on_newfP_clicked()
       return;
    }
    // Look is name base 8 space:
-   c=0;
+   int c = 0;
    for (n=0;n<8;n++) {
       if (litet[n]==' ') c++ ;
    }
@@ -1756,6 +1778,6 @@ void GemdDlg::on_desallP_clicked()
 
 void GemdDlg::on_quitP_clicked()
 {
-   fileclose(drih);
+   CloseFileX(fhdl);
    GemdDlg::close() ;
 }
