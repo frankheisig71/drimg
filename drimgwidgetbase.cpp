@@ -35,7 +35,6 @@
 char act = 0;
 char abortf = 0;
 
-int  n, c, i, k, s, o;  //loop counter, general
 char devStr[13];
 char dstr[60]; //for string operations
 int  detCount;
@@ -382,7 +381,7 @@ void drimgwidgetbase::detSDloop()
    ui->listBox1->clear();
    detCount = 0;
    act      = 1;
-   for (n=0;n<20;n++)
+   for (int n=0;n<20;n++)
    {
       #ifdef WINDOWS
       devStr1[4] = 'E'+n; //we're not checking /dev/sda and /dev/sdb
@@ -403,7 +402,6 @@ void drimgwidgetbase::detSDloop()
       #endif
       strcpy(dstr,devStr);
       strcat(dstr,"  ");
-      c=0; // hit flag
 
       int c = detSD();
       if (act == 0) { break; }
@@ -411,11 +409,11 @@ void drimgwidgetbase::detSDloop()
       if (c) {
       ui->listBox1->addItem(QString(dstr));
       if (n<12){
-         for (k=0;k<9;k++) detDev[k][detCount]=devStr[k]; // Store dev path
-            for (k=9;k<13;k++) detDev[k][detCount]='\0';
+         for (int k=0;k<9;k++) detDev[k][detCount]=devStr[k]; // Store dev path
+            for (int k=9;k<13;k++) detDev[k][detCount]='\0';
          }
          else{
-            for (k=0;k<13;k++) detDev[k][detCount]=devStr[k]; // Store dev path
+            for (int k=0;k<13;k++) detDev[k][detCount]=devStr[k]; // Store dev path
          }
          detCount++;
       }
@@ -476,8 +474,8 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     cylc = SecCnt/(heads*sectr) ; //Sector per track is fixed to 32
     //Get sector #0 and see filesystem on drive:
        // Clear buffer ahead:
-    for (n=0;n<512;n++) bufr[n] = 0 ;
-    for (k=0;k<13;k++) physd[k] = detDev[k][selected];
+    for (int n=0;n<512;n++) bufr[n] = 0 ;
+    for (int k=0;k<13;k++) physd[k] = detDev[k][selected];
 
     ui->inf4Label->setText(physd); //testing!!!
     finp = OpenDevice(physd,"rb");
@@ -488,9 +486,9 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
 
     if(ReadFromFile(bufr,1,512,finp) < 512) {
        QString qhm;
-       qhm.number(GetLastError());
+       qhm.setNum(GetLastError());
        qhm.insert(0, "Code: ");
-       QMessageBox::information(this, "Error", qhm ,QMessageBox::Cancel, QMessageBox::Cancel);
+       QMessageBox::information(this, "read error", qhm ,QMessageBox::Cancel, QMessageBox::Cancel);
     }
     CloseFileX(finp);
     OffFS = 0 ;
@@ -503,8 +501,8 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     char OSID[16];
     int matc = 0;
     //Get first 16 char:
-    for( n = 0; n < 16; n++ ) OSID[n]=bufr[n];
-    for( n = 0; n < 16; n++ ) {if (OSID[n]==PLUSIIS[n]) matc++ ;}
+    for(int n = 0; n < 16; n++ ) OSID[n]=bufr[n];
+    for(int n = 0; n < 16; n++ ) {if (OSID[n]==PLUSIIS[n]) matc++ ;}
     if (matc == 16) {
         ui->inf2Label->setText(PLUSIIS);
         //SetDlgItemText(hDlgWnd, Sta2, PLUSIIS);
@@ -515,8 +513,8 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     }
     //Check is 8-bit IDEDOS:
     matc = 0;
-    for( n = 0; n < 16; n++ ) OSID[n]=bufr[n*2];
-    for( n = 0; n < 16; n++ ) {if (OSID[n]==PLUSIIS[n]) matc++ ;}
+    for(int n = 0; n < 16; n++ ) OSID[n]=bufr[n*2];
+    for(int n = 0; n < 16; n++ ) {if (OSID[n]==PLUSIIS[n]) matc++ ;}
     if (matc == 16) {
         ui->inf2Label->setText("PLUSIDEDOS 256 byte sect");
         heads = bufr[68];
@@ -544,7 +542,7 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
         Filesys = 11; Swf = 0;
     }
     // Check for GemDos by swapped H/L :
-    for (n=0;n<512;n=n+2) { bufsw[n] = bufr[n+1];  bufsw[n+1] = bufr[n]; }
+    for (int n=0;n<512;n=n+2) { bufsw[n] = bufr[n+1];  bufsw[n+1] = bufr[n]; }
     if (  ((bufsw[0x1c7] == 'G') && (bufsw[0x1c8] == 'E') && (bufsw[0x1c9] == 'M'))
         ||((bufsw[0x1c7] == 'X') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))
         ||((bufsw[0x1c7] == 'B') && (bufsw[0x1c8] == 'B') && (bufsw[0x1c9] == 'M')))
@@ -906,7 +904,7 @@ void drimgwidgetbase::on_readButton_clicked()
                   //   rsh[8] = 1; }
                   // else   // no hdf 256 support here
                   rsh[8] = 0;
-                  for( n = 0; n < 128; n++ ) {
+                  for(int n = 0; n < 128; n++ ) {
                      PutCharFile(rsh[n],fout);
                   }
                   cophh = 128;
@@ -926,7 +924,7 @@ void drimgwidgetbase::on_readButton_clicked()
    // Here comes read from drives, medias...:
    else{
       if (OpenSavingFile(&fout, (form > 0))){
-         for (k=0;k<13;k++){ physd[k] = detDev[k][selected]; }
+         for (int k=0;k<13;k++){ physd[k] = detDev[k][selected]; }
          ui->inf4Label->setText(physd); //testing!!!
          if (OpenInputFile(&finp, physd, true)) {
             ui->curopLabel->setText("Reading from drive...");
@@ -938,7 +936,7 @@ void drimgwidgetbase::on_readButton_clicked()
                rsh[25] = cylc>>8;
                rsh[34] = sectr ;
                rsh[8]  = (form == 2) ? 1 : 0;
-               for( n = 0; n < 128; n++ ) {
+               for(int n = 0; n < 128; n++ ) {
                   PutCharFile(rsh[n],fout);
                }
                cophh = 128;
@@ -1040,8 +1038,8 @@ void drimgwidgetbase::on_openIfButton_clicked()
       char OSID[16];
       int matc = 0;
       //Get first 16 char:
-      for( n = 0 ; n < 16; n++ ) { OSID[n]=bufr[n+ofset]; }
-      for( n = 0; n < 16; n++ ) {if (OSID[n]==PLUSIIS[n]) { matc++; }}
+      for(int n = 0 ; n < 16; n++ ) { OSID[n]=bufr[n+ofset]; }
+      for(int n = 0; n < 16; n++ ) {if (OSID[n]==PLUSIIS[n]) { matc++; }}
 
       if (matc == 16) {
       //Check is 8-bit IDEDOS:
@@ -1063,7 +1061,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
          Filesys = 11 ;
       }
       // Check for GemDos by swapped H/L :
-      for (n=0;n<512;n=n+2) { bufsw[n] = bufr[n+1];  bufsw[n+1] = bufr[n]; }
+      for (int n=0;n<512;n=n+2) { bufsw[n] = bufr[n+1];  bufsw[n+1] = bufr[n]; }
       if (  ((bufsw[0x1c7] == 'G') && (bufsw[0x1c8] == 'E') && (bufsw[0x1c9] == 'M'))
           ||((bufsw[0x1c7] == 'X') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))
           ||((bufsw[0x1c7] == 'B') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))){
@@ -1152,7 +1150,7 @@ void drimgwidgetbase::on_writeButton_clicked()
          OpenOutputFile(&fout, loadedF, false);
       }
       else{
-         for (k=0; k<9; k++) physd[k] = detDev[k][selected];
+         for (int k=0; k<9; k++) physd[k] = detDev[k][selected];
          if (( ov2ro ) && ( SecCnt>2097152)) {
             QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
             act=0;
@@ -1252,7 +1250,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
       secsize = ( form == 2 ) ? 256 : 512;
       // Just make file with totalsectors*512 (or 256) 0 bytes
       //clear buffer:
-      for (n=0;n<secsize;n++){ bufr[n] = 0 ; }
+      for (int n=0;n<secsize;n++){ bufr[n] = 0 ; }
       g = sectr*heads*cylc ;
       for (f=0;f<g;f++) {
          status = WriteToFile(bufr,1,secsize,fout);
@@ -1270,7 +1268,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
       //Close file:
       CloseFileX(fout);
       setCursor(QCursor(Qt::ArrowCursor));
-      for( n = 0; n < 60; n++ ) dstr[n] = 0; //Clear string
+      for(int n = 0; n < 60; n++ ) dstr[n] = 0; //Clear string
        qhm.setNum(m);
        qhm.insert(0, "Image file of ");
        qhm.append(" bytes created.");

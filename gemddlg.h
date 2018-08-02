@@ -4,7 +4,7 @@
 #include <QDialog>
 #include <QModelIndex>
 
-//#define FRANKS_DEBUG
+#define FRANKS_DEBUG
 #define WINDOWS
 
 namespace Ui {

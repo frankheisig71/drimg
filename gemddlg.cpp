@@ -24,6 +24,7 @@
 #include <QMessageBox>
 #include <QFileDialog>
 #include <QTreeView>
+#include <QtGui>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,7 +51,6 @@ extern ULONG filelen, u ;
 extern ULONG ChaSecCnt ;
 
 extern int selected;
-extern int o, p, s, fscanp ;
 extern char detDev[13][16] ;
 extern char physd[13];
 extern char loadedF[256] ;
@@ -431,22 +431,12 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    // Load FAT #1
    SeekFileX64(fhdl, PartStartPosition+PartSectorSize*PartReservedSectors, 0);
    ReadFromFile(PartFATbuffer, 1, PartSectorsPerFAT*PartSectorSize, fhdl);
-   //lseek(drih, PartStartPosition+PartSectorSize*PartReservedSectors, 0) ;
-   //read(drih, PartFATbuffer, PartSectorsPerFAT*PartSectorSize);
    if (Swf)
    {   // Swap low/high bytes:
        for (m=0;m<PartSectorsPerFAT*PartSectorSize;m=m+2){
           k=PartFATbuffer[m] ; PartFATbuffer[m]=PartFATbuffer[m+1];PartFATbuffer[m+1]=k;
        }
    }
-   // Testing:
-   /*
-   flout = fopen("TheFat.bin","wb");
-   fwrite(PartFATbuffer,1,PartSectorsPerFAT*512 ,flout);
-   fclose(flout);
-   */
-   // Load root DIR
-
    loadroot() ;
 }
 void GemdDlg::on_filesLB_clicked(const QModelIndex &index)
@@ -548,7 +538,7 @@ void   GemdDlg::opensubd(int index)
 {
    if (index >= 0) {
       dpos = DirEntrySortPos[index] ; // Position in DIR, only first selection
-      o = dirbuf[dpos+11] ;
+      int o = dirbuf[dpos+11] ;
       if ((o & 16) == 16 ) {     // If not SubDir break
          //SetCursor( jc) ;
          PartSubDirLevel++ ;
@@ -630,7 +620,7 @@ void GemdDlg::subdirh()
    if ( PartSubDirLevel ) {
       int spafl, c = 0;
       subpath[0] = '/';
-      for(o=0;o<PartSubDirLevel;o++){
+      for(int o=0;o<PartSubDirLevel;o++){
          spafl = 0;
          for(int i=0;i<11;i++) {
             k = subnam[i][o+1] ;
@@ -742,7 +732,7 @@ void GemdDlg::DirUp()
       if (staclu == 0 )  loadroot() ;     //it is root then
       else {
          PartSubDirLevel-- ;
-         for (o=0;o<11;o++)  dstr[o] = subnam[o][PartSubDirLevel] ;
+         for (int o=0;o<11;o++)  dstr[o] = subnam[o][PartSubDirLevel] ;
          subdirh() ;
       }
    }
@@ -1011,22 +1001,23 @@ void SortFATNames(unsigned char* DirBuffer, unsigned int* UnSortList, unsigned i
    QStringList VolNameList;
    QStringList DirNameList;
    QStringList FileNameList;
-   QString qhm;
    unsigned int i, k;
 
-   for(i=0;i<DIR_ENTRIES_MAX_CNT;i++){
-      if( !IsEmpty(DirBuffer, UnSortList[i]) && !IsDeleted(DirBuffer, UnSortList[i])){
-          GenerateFileName(DirBuffer, UnSortList[i], &qhm);
+   i = 0;
+   for (QStringList::iterator sl = DirRawFilelist.begin(); sl != DirRawFilelist.end(); ++sl) {
+       QString CurrentItem = *sl;
+       if( !IsEmpty(DirBuffer, UnSortList[i]) && !IsDeleted(DirBuffer, UnSortList[i])){
           if (IsVolume(DirBuffer, UnSortList[i])){
-              VolNameList.append(qhm);
+              VolNameList.append(CurrentItem);
           }
           if (IsSubDir(DirBuffer, UnSortList[i])){
-              DirNameList.append(qhm);
+              DirNameList.append(CurrentItem);
           }
           if (IsFile(DirBuffer, UnSortList[i])){
-              FileNameList.append(qhm);
+              FileNameList.append(CurrentItem);
           }
       }
+      i++;
    }
    VolNameList.sort();
    DirNameList.sort();
@@ -1344,6 +1335,9 @@ int PadFileName(char *Instr, char* Outstr)
    for (i=8;n<k-1;i++) {Outstr[i]=Instr[n+1]; n++; }
    for (c=i;c<11;c++) Outstr[c]=' ';
    Outstr[c]= 0;
+   for (c=0;c<12;c++) {
+      if(Outstr[c]>64) {Outstr[c] = Outstr[c] & 0xDF; }
+   } // Make all capital
    return 1;
 }
 
@@ -1375,7 +1369,6 @@ int MakeFATFileName(char* SrcFileName, char* DestFileName)
    i = 0;
    for (c=0;c<length;c++){
       k=curzx[c];
-      if (k>64) k = k&0xDF ; // Make all capital
       if (k==' ') k='_' ; // Space to under
       if ((!o) && (k=='.')) { o = c;} // get pos of first .
       if (o) { filext[i] = k; i++; } // build extension
@@ -1574,7 +1567,7 @@ bool GemdDlg::AddFileToCurrentDir(char* FilePathName, unsigned char* DirBuffer)
    }
    else {
       unsigned int msapos = PartSectorsPerCluster*PartSectorSize;
-      o = 0 ; //flag
+      int o = 0 ; //flag
       for (UINT n=1; n<FileClusterCount; n++)
       {
          if ( (FileByteLength-msapos)<(PartSectorsPerCluster*PartSectorSize) ) {
@@ -1665,15 +1658,6 @@ void GemdDlg::on_AddFiles_clicked()
 void GemdDlg::on_newfP_clicked()
 {
 
-   //  1. Padd entered filename with zeros by need
-   //  2. Check is space on partiton
-   //  3. Check is name exists
-   //  4. Add it to current DIR
-   //  5. Create FAT entries - size (1 clust only) ??
-   //  6. Clear sectors and add SubDir .. and 2E at start
-   //  7. Rewrite medias DIR and FAT sectors!!!
-   //  8. Refresh ListBox with DIR content
-   //  9. Refresh Used/Free info at bottom
    int m,n;
    unsigned int FileSector, EntryPos;
 
