@@ -52,9 +52,11 @@ bool ov2ro = 1;
 
 QString fileName;
 #ifdef WINDOWS
+HANDLE physDevices[8]; = {0,0,0,0,0,0,0,0};
 HANDLE finp, fout, flout;
 #define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
 #else
+FILE* physDevices[8] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 FILE *finp, *fout, *flout;
 #define FILE_OPEN_FAILED NULL
 #endif
@@ -91,6 +93,12 @@ QString op, qhm;
 #ifdef WINDOWS
 
 void CloseFileX(HANDLE f){
+    for(int i=0; i<8; i++){
+       if (physDevices[i] == f){
+          physDevices[i] = 0;
+          break;
+       }
+    }
     CloseHandle(f);
 }
 
@@ -132,6 +140,14 @@ HANDLE OpenDevice(const char* name, const char * mode)
                      FILE_FLAG_NO_BUFFERING,// | FILE_FLAG_WRITE_THROUGH,
                      NULL);
     LastIOError = GetLastError();
+    if (fh != INVALID_HANDLE_VALUE){
+       for(int i=0; i<8; i++){
+          if (physDevices[i] == 0){
+             physDevices[i] = fh;
+             break;
+          }
+       }
+    }
     return fh;
 }
 
@@ -219,7 +235,13 @@ long GetFileLength(HANDLE fh)
    DWORD junk;
    return GetFileSize(fh, &junk);
 }
-
+bool IsPhysDevice(HANDLE fh)
+{
+   for(int i=0; i<8; i++){
+      if(physDevices[i] == fh){ return true;}
+   }
+   return false;
+}
 long SeekFileX(HANDLE fh, int offset, int origin){
    return SetFilePointer(fh, offset, 0, origin);
 }
@@ -233,28 +255,48 @@ long long SeekFileX64(HANDLE fh, long long offset, int origin){
 
 #else
 void CloseFileX(FILE* f){
-    fclose(f);
+   for(int i=0; i<8; i++){
+      if (physDevices[i] == f){
+         physDevices[i] = NULL;
+         break;
+      }
+   }
+   fclose(f);
 }
 
 int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
+    errno = 0;
     int read = fread(buffer,DataSize,DataCnt,fh);
     LastIOError = errno;
     return read;
 }
 int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
+    errno = 0;
     int written = fwrite(buffer,DataSize,DataCnt,fh);
     LastIOError = errno;
     return written;
 }
 FILE* OpenDevice(const char* name, const char * mode){
-   FILE* buf = fopen(name, mode);
-   LastIOError = errno;
-   return buf;
+    FILE* buf = NULL;
+    errno = 0;
+    buf = fopen(name, mode);
+    if (buf != NULL){
+       setvbuf(buf, NULL, _IONBF, 0);
+       for(int i=0; i<8; i++){
+          if (physDevices[i] == NULL){
+             physDevices[i] = buf;
+             break;
+          }
+       }
+    }
+    return buf;
 }
 FILE* OpenFileX(const char* name, const char * mode){
-    int written = fwrite(buffer,DataSize,DataCnt,fh);
+    FILE* buf = NULL;
+    errno = 0;
+    buf = fopen(name, mode);
     LastIOError = errno;
-    return written;
+    return buf;
 }
 
 long long GetDeviceLength(const char* devName)
@@ -265,18 +307,27 @@ long long GetDeviceLength(const char* devName)
    drih = open(devName,  O_RDONLY | O_NONBLOCK) ;
    if (drih>0) {
       devLen = lseek64( drih, 0,  SEEK_END );
-      fclose(drih);
+      close(drih);
       return devLen;
    }
    return 0;
 }
 
+bool IsPhysDevice(FILE* f)
+{
+   for(int i=0; i<8; i++){
+      if(physDevices[i] == f){ return true;}
+   }
+   return false;
+}
+
 long long GetFileLength64(FILE* fh)
 {
    long long pos, result;
-   pos = fseek(fh, 0, SEEK_CUR);
-   result = fseek(fh,0,SEEK_END);
-   fseek(fh, pos, SEEK_CUR);
+   pos = ftell(fh);
+   fseek(fh,0,SEEK_END);
+   result = ftell(fh);
+   fseek(fh, pos, SEEK_SET);
    return result;
 }
 long long GetDeviceLengthHandle(FILE* fh)
@@ -287,9 +338,10 @@ long long GetDeviceLengthHandle(FILE* fh)
 long GetFileLength(FILE* fh)
 {
    long pos, result;
-   pos = fseek(fh, 0, SEEK_CUR);
-   result = fseek(fh,0,SEEK_END);
-   fseek(fh, pos, SEEK_CUR);
+   pos = ftell(fh);
+   fseek(fh,0,SEEK_END);
+   result = ftell(fh);
+   fseek(fh, pos, SEEK_SET);
    return result;
 }
 
@@ -299,10 +351,16 @@ int PutCharFile(const int data, FILE* fh){
    return buf;
 }
 long SeekFileX(FILE* fh, int offset, int origin){
-   return fseek(fh,offset,origin);
+    if (fseek(fh, offset, origin) == 0){
+        return ftell(fh);
+    }
+    return -1;
 }
 long long SeekFileX64(FILE* fh, long long offset, int origin){
-   return fseek(fh, offset, origin);
+   if (fseek(fh, offset, origin) == 0){
+       return ftell(fh);
+   }
+   return -1;
 }
 int GetLastError(void){
    return errno;
@@ -617,8 +675,8 @@ void drimgwidgetbase::on_FileTrButton_clicked()
 
 #define SML_SEC_BUF_SIZE 0x200
 #define SML_SEC_BUF_HALF 0x100
-#define BIG_SEC_BUF_SIZE 0x10000
-#define BIG_SEC_BUF_HALF 0x08000
+#define BIG_SEC_BUF_SIZE 0x100000
+#define BIG_SEC_BUF_HALF 0x080000
 #define READ_ERROR  -1
 #define WRITE_ERROR -2
 #define MEM_ERROR   -3
@@ -802,17 +860,24 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
        if (buf2 == NULL) {free(bufr); status = MEM_ERROR; }
        else {
 
-          ULONG bg = SecCnt >> 7;
-          ULONG sm = SecCnt & 0x7F;
+          ULONG bg = SecCnt >> 11;
+          ULONG sm = SecCnt & 0x7FF;
           setCursor(QCursor(Qt::WaitCursor));
           for( m = 0; m < bg; m++ ) {
              if ((status = CopyBigSect(f_in, f_out, bufr, buf2, swap, h256rb, fromOrig)) < 0) { break; }
              copied += status;
-             *writtenSec += 0x80;
-             prog = 98*(m << 7)/SecCnt;
+             *writtenSec += 0x800;
+             prog = 99*(m << 11)/SecCnt;
              if (prog>prnxt) {
+                #ifndef WINDOWS
+                //if (IsPhysDevice(f_out)){
+                   fdatasync(fileno(f_out));
+                //}
+                #endif
+                fflush(f_out);
                 ui->progressBar1->setValue(prog+1);
                 prnxt += 1;
+
              }
              QCoreApplication::processEvents();
              if (abortf) { abortf=0 ; break; }
@@ -821,8 +886,9 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
              if ((status = CopySmallSect(f_in, f_out, bufr, buf2, swap, h256rb, fromOrig)) < 0) { break; }
              copied += status;
              *writtenSec += 1;
-             prog = 98*(m << 7)/SecCnt;
+             prog = 99*m/SecCnt;
              if (prog>prnxt) {
+                fflush(f_out);
                 ui->progressBar1->setValue(prog+1);
                 prnxt += 1;
              }
@@ -1175,7 +1241,7 @@ void drimgwidgetbase::on_writeButton_clicked()
          else fsecc = (filelen-cophh)/512 ;
          qhm = ui->seccnEdit->text() ;
          SecCnt = qhm.toLong();
-         if (SecCnt < fsecc)  fsecc = SecCnt;
+         if (!((selected==99) && (SecCnt == 0)) && (SecCnt < fsecc))  fsecc = SecCnt;
          qhm.setNum(fsecc);
          ui->inf4Label->setText(qhm) ; // testing!!!
 

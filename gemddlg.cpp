@@ -217,6 +217,7 @@ void GemdDlg::OpenDialog()
    unsigned char bufr[512];
    unsigned char buf2[512];
 
+   DestDir[0] = '\0';
    // Open file or physical drive:
    if (selected<16){
       for (int k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
@@ -742,11 +743,8 @@ void GemdDlg::on_setddP_clicked()
    fileName = QFileDialog::getExistingDirectory(this, tr("Select dest. dir:"), "", QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
    if( !fileName.isEmpty() )
    {
-      //QByteArray qchar_array = fileName.toLatin1();
-      //const char *c_char = qchar_array.data();
       strcpy(DestDir, (char*)fileName.toLatin1().data());
       chdir(DestDir);
-      //SetCurrentDirectory(DestDir) ;
    }
 }
 
@@ -764,6 +762,7 @@ void GemdDlg::on_filesLB_doubleClicked(const QModelIndex &index)
 
 void GemdDlg::on_opdirP_clicked()
 {
+    /*
      if (PartSubDirLevel > 0) {
         if (ui->filesLB->currentRow() == 0) { //updir
             DirUp();
@@ -771,6 +770,20 @@ void GemdDlg::on_opdirP_clicked()
            opensubd(ui->filesLB->currentRow() - 1);
         }
     } else { opensubd(ui->filesLB->currentRow()); }
+    */
+    QFileDialog w;
+    w.setFileMode(QFileDialog::DirectoryOnly);
+    w.setOption(QFileDialog::DontUseNativeDialog,true);
+    QListView *l = w.findChild<QListView*>("listView");
+    if (l) {
+       l->setSelectionMode(QAbstractItemView::MultiSelection);
+    }
+    QTreeView *t = w.findChild<QTreeView*>();
+    if (t) {
+       t->setSelectionMode(QAbstractItemView::MultiSelection);
+    }
+    w.exec();
+
 }
 
 void GemdDlg::on_timeCB_clicked()
@@ -1259,6 +1272,9 @@ void GemdDlg::on_ExtractFiles_clicked()
    debug_dirbuf = (unsigned char*)(&dirbuf[64]);
    if (debug_dirbuf) {};
    #endif
+   if(DestDir[0] == '\0'){
+      on_setddP_clicked();
+   }
 
    if (ui->filesLB->currentRow() < 0) { return; }
    listOffset = (PartSubDirLevel > 0) ? 1 : 0;
