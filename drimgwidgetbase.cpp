@@ -52,7 +52,7 @@ bool ov2ro = 1;
 
 QString fileName;
 #ifdef WINDOWS
-HANDLE physDevices[8]; = {0,0,0,0,0,0,0,0};
+HANDLE physDevices[8] = {0,0,0,0,0,0,0,0};
 HANDLE finp, fout, flout;
 #define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
 #else
@@ -153,12 +153,14 @@ HANDLE OpenDevice(const char* name, const char * mode)
 
 int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh){
    DWORD BytesRead = 0;
+   if((DataSize == 0) || (DataCnt == 0)) {return 0;}
    ReadFile(fh, buffer, DataSize*DataCnt, &BytesRead, NULL);
    LastIOError = GetLastError();
    return BytesRead / DataSize;
 }
 int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh){
     DWORD BytesWritten = 0;
+    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     WriteFile(fh, buffer, DataSize*DataCnt, &BytesWritten, NULL);
     LastIOError = GetLastError();
     return BytesWritten / DataSize;
@@ -265,16 +267,18 @@ void CloseFileX(FILE* f){
 }
 
 int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
+    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     errno = 0;
     int read = fread(buffer,DataSize,DataCnt,fh);
     LastIOError = errno;
-    return read;
+    return read / DataSize;
 }
 int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
+    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     errno = 0;
     int written = fwrite(buffer,DataSize,DataCnt,fh);
     LastIOError = errno;
-    return written;
+    return written / DataSize;
 }
 FILE* OpenDevice(const char* name, const char * mode){
     FILE* buf = NULL;
@@ -418,7 +422,7 @@ int drimgwidgetbase::detSD()
       }
    }
    else{
-       e = GetLastError();
+      e = GetLastError();
       if (e == EACCES) {
          QMessageBox::critical(this, "Drive open error.", "Need to be root for accessing devices. Root?", QMessageBox::Cancel, QMessageBox::Cancel);
          act=0;
@@ -872,9 +876,9 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
                 #ifndef WINDOWS
                 //if (IsPhysDevice(f_out)){
                    fdatasync(fileno(f_out));
+                   fflush(f_out);
                 //}
                 #endif
-                fflush(f_out);
                 ui->progressBar1->setValue(prog+1);
                 prnxt += 1;
 
@@ -888,7 +892,12 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
              *writtenSec += 1;
              prog = 99*m/SecCnt;
              if (prog>prnxt) {
-                fflush(f_out);
+                #ifndef WINDOWS
+                //if (IsPhysDevice(f_out)){
+                   fdatasync(fileno(f_out));
+                   fflush(f_out);
+                //}
+                #endif
                 ui->progressBar1->setValue(prog+1);
                 prnxt += 1;
              }

@@ -4,8 +4,8 @@
 #include <QDialog>
 #include <QModelIndex>
 
-//#define FRANKS_DEBUG
-//#define WINDOWS
+#define FRANKS_DEBUG
+#define WINDOWS
 
 namespace Ui {
 class GemdDlg;
@@ -18,21 +18,26 @@ class GemdDlg : public QDialog
 public:
     explicit GemdDlg(QWidget *parent = 0);
     ~GemdDlg();
+    void closeEvent (QCloseEvent *event);
 
-    void loadroot();
+    void loadroot(bool doList);
     void ShowPartitionUsage();
-    void opensubd(int index);
-    void subdirh();
-    void DirUp();
+    void opensubd(int index, bool doList);
+    void subdirh(bool doList);
+    void DirUp(bool doList);
     void LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer);
     void LoadSubDir(bool IsRoot, bool doList);
     int  ExtractFile(unsigned char* DirBuffer, int pos);
     void EraseFile(unsigned char* DirBuffer, int EntryPos);
     void GetFATFileName(unsigned char* DirBuffer, int DirPos, char* NameBuffer);
-    void EnterSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, unsigned int* StartCluster, bool MakeLocalDir, bool EnterLocalDir);
-    bool EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* StartCluster, unsigned int* EntryPos, bool ChangeLocalDir);
     void WriteCurrentDirBuf(void);
-    bool AddFileToCurrentDir(char* FilePathName, unsigned char* DirBuffer);
+    void EnterSubDir(unsigned char* DirBuffer, int EntryPos, unsigned int* StartCluster, char* NameBuffer, bool MakeLocalDir, bool EnterLocalDir);
+    int  MakeSubF(unsigned int Clun);
+    bool EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* StartCluster, unsigned int* EntryPos, bool ChangeLocalDir);
+    int  AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBuffer);
+    bool AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer);
+    bool AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer);
+    unsigned long WriteSectors( int StartSector, int Count, unsigned char *Buffer);
 
 
 private slots:
