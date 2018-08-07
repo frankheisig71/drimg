@@ -101,13 +101,14 @@ extern long long GetFileLength64(FILE* fh);
 extern long GetFileLength(FILE* fh);
 extern long SeekFileX(FILE* fh, int offset, int origin);
 extern long long SeekFileX64(FILE* fh, long long offset, int origin);
+extern int GetLastError(void);
 #endif
 
 #ifdef WINDOWS
-HANDLE fhdl, fhout;
+static HANDLE fhdl, fhout;
 #define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
 #else
-FILE *fhdl, *fhout;
+static FILE *fhdl = nullptr, *fhout = nullptr;
 #define FILE_OPEN_FAILED NULL
 #endif
 
@@ -225,15 +226,15 @@ void GemdDlg::OpenDialog()
    // Open file or physical drive:
    if (selected<16){
       for (int k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
-      if ((ov2ro)  && ( SecCnt>2097152 )) {
+      if ((ov2ro)  && ( SecCnt>0x20000000)) {
          fhdl = OpenDevice(physd, "rb" );
       }
       else{
-         fhdl = OpenDevice(physd, "rwb" );
+         fhdl = OpenDevice(physd, "r+b" );
       }
    }
    else{
-      fhdl = OpenFileX(loadedF, "rwb" );
+      fhdl = OpenFileX(loadedF, "r+b" );
    }
    if (fhdl == FILE_OPEN_FAILED) {
       QMessageBox::critical(this, "Error", "Drive/file open error ", QMessageBox::Cancel, QMessageBox::Cancel);
@@ -619,7 +620,6 @@ unsigned long GemdDlg::WriteSectors( int StartSector, int Count, unsigned char *
           u = WriteToFile(buf, 1, 512, fhdl);
           if ((failed = (u < 512)) == true) break;
           written = written + u;
-          //u = u+ write(drih, buf, 512);
        }
     }
     else {
@@ -628,7 +628,7 @@ unsigned long GemdDlg::WriteSectors( int StartSector, int Count, unsigned char *
     }
     if (failed) {
        QString qhm;
-       qhm.setNum(GetLastError());
+       qhm.setNum(errno/*GetLastError()*/);
        qhm.insert(0, "Drive/file write error. (");
        qhm.append(")");
        QMessageBox::critical(this, "Error", qhm, QMessageBox::Cancel, QMessageBox::Cancel);

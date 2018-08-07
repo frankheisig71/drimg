@@ -110,6 +110,8 @@ HANDLE OpenFileX(const char* name, const char * mode)
 
    if (strstr(mode, "r") != NULL) { CrMode = CrMode | GENERIC_READ; OpMode = OPEN_EXISTING; }
    if (strstr(mode, "w") != NULL) { CrMode = CrMode | GENERIC_WRITE; OpMode = OPEN_ALWAYS; }
+   if (strstr(mode, "r+") != NULL) { CrMode = GENERIC_READ | GENERIC_WRITE; OpMode = OPEN_EXISTING; }
+   if (strstr(mode, "w+") != NULL) { CrMode = GENERIC_READ | GENERIC_WRITE; OpMode = OPEN_ALWAYS; }
 
 
    fh = CreateFileA(name,
@@ -1226,7 +1228,7 @@ void drimgwidgetbase::on_writeButton_clicked()
       }
       else{
          for (int k=0; k<9; k++) physd[k] = detDev[k][selected];
-         if (( ov2ro ) && ( SecCnt>2097152)) {
+         if (( ov2ro ) && ( SecCnt>0x20000000)) {
             QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
             act=0;
             return;

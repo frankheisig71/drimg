@@ -328,9 +328,9 @@
   <widget class="QPushButton" name="refrButton">
    <property name="geometry">
     <rect>
-     <x>170</x>
+     <x>179</x>
      <y>220</y>
-     <width>90</width>
+     <width>81</width>
      <height>31</height>
     </rect>
    </property>
@@ -1064,18 +1064,18 @@
     <rect>
      <x>10</x>
      <y>220</y>
-     <width>151</width>
+     <width>161</width>
      <height>22</height>
     </rect>
    </property>
    <property name="text">
-    <string>Drives &gt;2&amp;GB read only</string>
+    <string>Drives &gt;4GB read only</string>
    </property>
    <property name="shortcut">
     <string>Alt+G</string>
    </property>
    <property name="checked">
-    <bool>false</bool>
+    <bool>true</bool>
    </property>
   </widget>
   <widget class="QPushButton" name="writeButton">
