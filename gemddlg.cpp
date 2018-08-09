@@ -146,15 +146,15 @@ unsigned int  DirEntrySortIndex[DIR_ENTRIES_MAX_CNT];
 unsigned int  DirEntryCnt;
 QStringList   DirRawFilelist;
 
-
-unsigned int  pDirEntryPos[16] ; // Position in parent dir, by recursive extraction
+#define MAX_SUBDIR_DEPTH 16
+unsigned int  pDirEntryPos[MAX_SUBDIR_DEPTH] ; // Position in parent dir, by recursive extraction
 unsigned int  credirClu[16] ; // Created DIR cluster spread store
 unsigned int  credirCnt;
 unsigned char dirbuf[512*100];
 unsigned char PartFATbuffer[132000] ;
 unsigned char trasb[65536] ;  // 128 sector
-char subnam[12][8] ;
-char subdnam[13] ;
+char subnam[12][MAX_SUBDIR_DEPTH] ;
+char subdnam[13];
 char subpath[256];
 char DestDir[256];
 char res ;
@@ -177,7 +177,7 @@ GemdDlg::GemdDlg(QWidget *parent) :
     ui->desallP->setIcon(QIcon(":/Icons/DeselectAll.png"));
     ui->DeleteFiles->setIcon(QIcon(":/Icons/DeleteFiles.png"));
     ui->ExtractFiles->setIcon(QIcon(":/Icons/Extract.png"));
-    ui->opdirP->setIcon(QIcon(":/Icons/OpenDir.png"));
+    ui->opdirP->setIcon(QIcon(":/Icons/AddDir.png"));
     ui->quitP->setIcon(QIcon(":/Icons/Quit.png"));
     ui->setddP->setIcon(QIcon(":/Icons/DestDir.png"));
     ui->newfP->setIcon(QIcon(":/Icons/OpenFolder.png"));
@@ -192,6 +192,7 @@ GemdDlg::~GemdDlg()
 void GenerateFileName(unsigned char* buf, int offs, QString *name)
 {
    char nstr[60];
+
    name->clear();
    for(int k=0; k<8; k++) {
       nstr[k] = buf[offs+k] ;
@@ -637,6 +638,38 @@ int LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, QString* 
    return 0 ;
 }
 
+static const byte TOSfield[19] = {6,7,14,15,16,17,18,19,20,21,22,23,24,27,28,29,30,31,0};
+static const byte DOSfield[19] = {208,209,210,211,224,225,226,227,228,229,230,231,232,233,234,235,236,237,0};
+
+void PadTOStoLocal(char* Name){
+    //remove garbage
+    for(int i=0; i<12; i++){
+       if ((byte)Name[i] > 126) {
+           Name[i] = '_';
+       }
+    }
+    // pad TOS specials
+    for(int i=0; i<12; i++){
+      if (Name[i] == 0) { break; }
+      for(int j=0; j<18;j++){
+         if((byte)Name[i] == TOSfield[j]){
+            Name[i] = DOSfield[j];
+            break;
+         }
+      }
+   }
+}
+void PadLocalToTOS(char* Name){
+   for(int i=0; i<12; i++){
+      if (Name[i] == 0) { break; }
+      for(int j=0; j<18;j++){
+         if((byte)Name[i] == DOSfield[j]){
+            Name[i] = TOSfield[j];
+            break;
+         }
+      }
+   }
+}
 void GemdDlg::LoadSubDir(bool IsRoot, bool doList)
 {
    unsigned int n, i;
@@ -719,7 +752,7 @@ void GemdDlg::subdirh(bool doList)
    LoadDirBuf(&DirCurrentStartCluster, dirbuf);
    LoadSubDir(false, doList);
 }
-void GemdDlg::OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, bool doList)
+void GemdDlg::OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, bool doList)
 {
    if (EntryPos >= 0) {
       int o = DirBuffer[EntryPos+11] ;
@@ -729,16 +762,12 @@ void GemdDlg::OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBu
          DirCurrentStartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
          //Get dir name:
          for (int o=0; o<11; o++) {
-            dstr[o] = DirBuffer[EntryPos+o] ;
             // store SUBdir name
             subnam[o][PartSubDirLevel] = DirBuffer[EntryPos+o];
-            if (NameBuffer != NULL) NameBuffer[o] = DirBuffer[EntryPos+o];
          }
-         if (NameBuffer != NULL) NameBuffer[11] = '\0';
          subdirh(doList);
       }
-      else {if (NameBuffer != NULL) NameBuffer[0] = '\0'; }
-   }  // perform only for first selected item!!!
+   }
 }
 
 void GemdDlg::FATDirUp(unsigned char* DirBuffer, char* NameBuffer, bool doList)
@@ -757,27 +786,27 @@ void GemdDlg::FATDirUp(unsigned char* DirBuffer, char* NameBuffer, bool doList)
       }
    }
 }
-
-void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, bool MakeLocalDir, bool EnterLocalDir)
+void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocalDir, bool EnterLocalDir)
 {
    int o;
+   char DirName[13];
+
    pDirEntryPos[PartSubDirLevel] = EntryPos; //we need the position if we come back up
-   OpenFATSubDir(DirBuffer, EntryPos, NameBuffer, false);
-   if (NameBuffer != NULL) {
-      if(MakeLocalDir){
-         #ifdef WINDOWS
-         o = mkdir(NameBuffer);
-         #else
-         o = mkdir(NameBuffer,0777);
-         #endif
-      }
-      if (EnterLocalDir) {
-         o = chdir(NameBuffer);
-      }
-      if(o) {/* something to do here */}
-      ui->dirLabel->setText(NameBuffer);
-      QCoreApplication::processEvents();
+   GetFATFileName(DirBuffer, EntryPos, DirName);
+   OpenFATSubDir(DirBuffer, EntryPos, false);
+   if(MakeLocalDir){
+      #ifdef WINDOWS
+      o = mkdir(DirName);
+      #else
+      o = mkdir(DirName,0777);
+      #endif
    }
+   if (EnterLocalDir) {
+      o = chdir(DirName);
+   }
+   if(o) {/* something to do here */}
+   ui->dirLabel->setText(DirName);
+   QCoreApplication::processEvents();
 }
 
 bool GemdDlg::EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* UpEntryPos, bool ChangeLocalDir) //returns IsRoot
@@ -814,10 +843,10 @@ void GemdDlg::on_filesLB_doubleClicked(const QModelIndex &index)
        if (index.row() == 0) { //updir
            FATDirUp(dirbuf, NULL, true);
        } else {
-           OpenFATSubDir(dirbuf, DirEntrySortPos[index.row()-1], NULL, true);
+           OpenFATSubDir(dirbuf, DirEntrySortPos[index.row()-1], true);
        }
 
-   } else { OpenFATSubDir(dirbuf, DirEntrySortPos[index.row()], NULL, true); }
+   } else { OpenFATSubDir(dirbuf, DirEntrySortPos[index.row()], true); }
 }
 
 void GemdDlg::on_timeCB_clicked()
@@ -870,7 +899,9 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    int rc = 0;
    unsigned int StartCluster, NextCluster, FileSector;
    unsigned int FileLength, msapos = 0;
+   unsigned char DataBuffer[0x10000];  // 128 sector
    int RemainingBytes;
+   char name[13];
 
    //load file from drive/image:
    StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
@@ -878,22 +909,27 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    RemainingBytes = FileLength;
    fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
    ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
+   GetFATFileName(DirBuffer, EntryPos, name);
    // open save file:
-   fhout = OpenFileX(dstr, "wb");
+   fhout = OpenFileX(name, "wb");
    if (fhout == FILE_OPEN_FAILED) {
-      QMessageBox::critical(this, dstr, "File open error ", QMessageBox::Cancel, QMessageBox::Cancel);
+      QString qhm;
+      qhm.setNum(GetLastError());
+      qhm.insert(0, "File open error. (");
+      qhm.append(")");
+      QMessageBox::critical(this, name, qhm, QMessageBox::Cancel, QMessageBox::Cancel);
       ui->errti->setText("Error!");
 	  return 1;
    }
-   tosave = PartSectorSize*PartSectorsPerCluster ;
+   long tosave = PartSectorSize*PartSectorsPerCluster ;
    // get sector(s) to load and next cluster
    do {
       FATlookUp(StartCluster, &NextCluster, &FileSector);
-      ReadSectors(FileSector, PartSectorsPerCluster, trasb);
-      if ( RemainingBytes<(PartSectorSize*PartSectorsPerCluster) ) { tosave = RemainingBytes; }
+      ReadSectors(FileSector, PartSectorsPerCluster, DataBuffer);
+      if ( RemainingBytes<(int)(PartSectorSize*PartSectorsPerCluster) ) { tosave = RemainingBytes; }
       ULONG written;
-      if ((written = WriteToFile(trasb, 1, tosave, fhout)) > 0) {
-        msapos = msapos + written;
+      if ((written = WriteToFile(DataBuffer, 1, tosave, fhout)) > 0) {
+         msapos = msapos + written;
       }
       RemainingBytes = RemainingBytes-PartSectorSize*PartSectorsPerCluster;
       doloop = ( RemainingBytes >= 0 ) && ( NextCluster <= 0xfff0 );
@@ -935,6 +971,7 @@ void GemdDlg::GetFATFileName(unsigned char* DirBuffer, int EntryPos, char* NameB
 	  }
    }
    NameBuffer[i] = 0 ; // String term.
+   PadTOStoLocal(NameBuffer);
    ui->exwht->setText(NameBuffer);
    //ui->errti->setText(" ");
    QCoreApplication::processEvents();
@@ -992,7 +1029,7 @@ void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Lengt
    DirBuffer[EntryPos+31] = Length>>24;
 }
 
-void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams)
+void GemdDlg::SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams)
 {
    unsigned int n;
    time_t tim ;
@@ -1006,7 +1043,21 @@ void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* Fil
    #ifdef WINDOWS
    if (FileParams == NULL) { trc = localtime(&tim); }
    else { trc = localtime(&FileParams->st_mtime);}
-   memcpy(&tout, trc, sizeof(tm));
+   if (trc != NULL) {
+       memcpy(&tout, trc, sizeof(tm));
+   } else {
+       char message[256];
+       char name[13];
+       GetFATFileName(DirBuffer, EntryPos, name);
+       sprintf(message, "File %s : Creation date faulty!", name);
+       QMessageBox::warning(this, "date / time error", message, QMessageBox::Cancel);
+       tout.tm_sec = 0;
+       tout.tm_min = 0;
+       tout.tm_hour = 0;
+       tout.tm_mday = 1;
+       tout.tm_mon = 1;
+       tout.tm_year = 85;
+   }
    #else
    if (FileParams == NULL){ localtime_r( &tim, &tout); } // Current time for timestamp
    else { localtime_r( &FileParams->st_mtime, &tout);} // Filetime for timestamp
@@ -1149,7 +1200,7 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
     if (EntryPos == -1) {return false;}
     //Write Directory: (<-needed on each Dir change)
     WriteCurrentDirBuf();
-    EnterSubDir(DirBuffer, EntryPos, NULL, false, false);
+    EnterSubDir(DirBuffer, EntryPos, false, false);
     CurLocalDirLevel = LocalDirLevel + 1;
 
     QDirIterator it(PathName, QDir::NoFilter, QDirIterator::Subdirectories);
@@ -1158,258 +1209,31 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
        QFileInfo fi = it.fileInfo();
        if (fi.fileName().compare(".") == 0) {continue;}
        if (fi.fileName().compare("..") == 0) {continue;}
+       int NewLocalDirLevel = qhm.count(QLatin1Char('/'));
+       while (NewLocalDirLevel < CurLocalDirLevel){
+          WriteCurrentDirBuf();
+          FATDirUp(DirBuffer, NULL, false);
+          CurLocalDirLevel--;
+       }
        if (fi.isDir()){
           EntryPos = AddSingleDirToCurrentDir(fi.fileName(), DirBuffer);
           if (EntryPos == -1) {break;}
           WriteCurrentDirBuf();
-          EnterSubDir(DirBuffer, EntryPos, NULL, false, false);
+          EnterSubDir(DirBuffer, EntryPos, false, false);
           CurLocalDirLevel++;
        } else if (fi.isFile()){
-          int NewLocalDirLevel = qhm.count(QLatin1Char('/'));
-          if (NewLocalDirLevel < CurLocalDirLevel){
-             WriteCurrentDirBuf();
-             FATDirUp(DirBuffer, NULL, false);
-             CurLocalDirLevel--;
-          }
           if (!AddFileToCurrentDir(qhm, DirBuffer)) { break; }
        }
     }
-    WriteCurrentDirBuf();
-    FATDirUp(DirBuffer, NULL, false);
+    while (LocalDirLevel < CurLocalDirLevel){
+       WriteCurrentDirBuf();
+       FATDirUp(DirBuffer, NULL, false);
+       CurLocalDirLevel--;
+    }
     return true;
 }
 
 
-void GemdDlg::on_opdirP_clicked()
-{
-   QFileDialog DirSelector;
-   DirSelector.setFileMode(QFileDialog::DirectoryOnly);
-   DirSelector.setOption(QFileDialog::DontUseNativeDialog,true);
-   QListView *l = DirSelector.findChild<QListView*>("listView");
-   if (l) {
-      l->setSelectionMode(QAbstractItemView::MultiSelection);
-   }
-   QTreeView *t = DirSelector.findChild<QTreeView*>();
-   if (t) {
-      t->setSelectionMode(QAbstractItemView::MultiSelection);
-   }
-   DirSelector.setWindowIcon(QIcon("://Icons/atarifolder.png"));
-   DirSelector.setWindowTitle("Select diretories to write to device");
-
-   if(DirSelector.exec() == 0){ return; }
-   if(!DirSelector.selectedFiles().isEmpty())  {
-      setCursor(QCursor(Qt::WaitCursor));
-
-      QCoreApplication::processEvents(); // refresh dialog content
-      setCursor(QCursor(Qt::WaitCursor));
-
-      int i= DirSelector.selectedFiles().count();
-      for (int k=0; k<i; k++){
-         if (!AddDirTreeToCurrentDir(DirSelector.selectedFiles().value(k), dirbuf)) { break; }
-      }
-      WriteCurrentDirBuf();
-      //Write FAT back:
-      WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
-      //Second FAT
-      WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
-      // Refresh Used/free indicator:
-      ShowPartitionUsage() ;
-      // Need to refresh listbox content
-      LoadSubDir((PartSubDirLevel == 0), true) ;
-
-      setCursor(QCursor(Qt::ArrowCursor));
-   } // if Seldfiles end
-}
-
-void GemdDlg::on_DeleteFiles_clicked()
-{
-   unsigned int CurrentDirEntryPos, button;
-   int  DirLevel, listOffset, FileRemainsLevel;
-   char message[256];
-   bool Abort = false;
-   bool YesToAll = false;
-
-   if (ui->filesLB->currentRow() < 0) { return; }
-   if ( QMessageBox::warning(this, "Deleting files!",
-                             "You are about to delete files and / or directories.\nThey can not be restored!\n\nAre you sure?",
-                             QMessageBox::Yes | QMessageBox::Cancel) == QMessageBox::Cancel) { return; }
-
-   //QMessageBox::critical(this, "Deleting!", "Deleting", QMessageBox::Cancel);
-
-   listOffset = (PartSubDirLevel > 0) ? 1 : 0;
-   setCursor(QCursor(Qt::WaitCursor));
-   DirLevel   = 0;
-   FileRemainsLevel = 0;
-   pDirEntryPos[0] = 0;
-   // Get count of items in listbox
-   int litc = ui->filesLB->count()-listOffset;
-   for (int p=0;p<litc;p++) { //step through listed files
-      // see is item selected:
-      if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
-         //ui->filesLB->item(p+listOffset)->setSelected(false);
-         dpos = DirEntrySortPos[p];// Position in DIR
-         if (IsVolume(dirbuf, dpos)) { continue; }    //avoid VOL extraction
-         GetFATFileName(dirbuf, dpos, dstr);
-         // Recursive subdir extraction Open SubDir, show files, and extract
-         // Need to store level, parent & pos in parent
-         if (IsSubDir(dirbuf, dpos)) {
-            if (!YesToAll) {
-               sprintf(message, "Delete subdirectory %s including all files below?", dstr);
-               button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
-               if (button ==  QMessageBox::No){ continue; }//next entry
-               if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
-               YesToAll = (button ==  QMessageBox::YesToAll);
-            }
-            // Store pos in parent, here by selection number
-            EnterSubDir(dirbuf, dpos, dstr, false, false);
-            DirLevel++;
-            CurrentDirEntryPos = 64; // 1st 2 entries of sub dir are '.' and '..'
-            do{
-               bool intoNextSubDir = false;
-               for (UINT n=CurrentDirEntryPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
-                  if (IsEmpty(dirbuf, n)) { break; }
-                  if (IsDeleted(dirbuf, n)) { continue; }
-                  GetFATFileName(dirbuf, n,dstr);
-                  if (IsFile(dirbuf, n)) { //no subdir, it's a file
-                     if (!YesToAll) {
-                        sprintf(message, "Delete file %s?", dstr);
-                        button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
-                        if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
-                        if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
-                        YesToAll = (button ==  QMessageBox::YesToAll);
-                     }
-                     EraseFile(dirbuf, n);
-                  }else if (IsSubDir(dirbuf, n)) {
-                     // its a subdir -> store pos in dir, leave n loop
-                     if (!YesToAll) {
-                        sprintf(message, "Delete subdirectory %s including all files below?", dstr);
-                        button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
-                        if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
-                        if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
-                        YesToAll = (button ==  QMessageBox::YesToAll);
-                     }
-                     EnterSubDir(dirbuf, n, dstr, false, false);
-                     DirLevel++;
-                     intoNextSubDir = true;
-                     break;
-                  }
-               }  //n loop end
-               if(intoNextSubDir){ intoNextSubDir = false; continue; }
-               //we are though
-               if (FileRemainsLevel == DirLevel){ //there wss a file left in SubDir
-                  WriteCurrentDirBuf(); //rewrite Dir
-               }
-               //dir up
-               EnterUpDir(dirbuf, dstr, &CurrentDirEntryPos, true);
-               DirLevel--;
-               //do not delete dirs not empty
-               if (FileRemainsLevel <= DirLevel) {
-                  EraseFile(dirbuf, CurrentDirEntryPos); //just mark Clusters as free
-               }
-               if (FileRemainsLevel > DirLevel) {FileRemainsLevel = DirLevel; }
-               if (DirLevel == 0) { //we're on topmost level
-                  break;
-               }
-               CurrentDirEntryPos += 32; // point to next entry
-               //are we in subdir? :
-               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
-            }while( PartSubDirLevel > 0);
-            if (Abort) { break; }
-            continue; //next main dir entry
-         }
-         if (Abort) { break; }
-         sprintf(message, "Delete File %s?", dstr);
-         if (QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::Cancel) ==  QMessageBox::Yes){
-            EraseFile(dirbuf, dpos);
-         }
-      }
-      if (Abort) { break; }
-   }
-   if (!Abort) {
-      WriteCurrentDirBuf(); //rewrite Dir
-      //Write FAT back:
-      WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
-      //Second FAT
-      WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
-      // Refresh Used/free indicator:
-   }
-   ShowPartitionUsage() ;
-   // Need to refresh listbox content
-   LoadSubDir((PartSubDirLevel == 0), true) ;
-
-   setCursor(QCursor(Qt::ArrowCursor));
-}
-
-void GemdDlg::on_ExtractFiles_clicked()
-{
-   unsigned int CurrentDirEntryPos;
-   //int DirLevel;
-   int listOffset;
-
-   #ifdef FRANKS_DEBUG
-   #ifdef WINDOWS
-   strcpy(DestDir, "D:\\Projekte\\tools\\build-DrImg\\testoutput");
-   #else
-   strcpy(DestDir, "/home/frank/Projekte/ATARI/DrImg/testoutput");
-   #endif
-   if (chdir(DestDir)) {}
-   #endif
-   if(DestDir[0] == '\0'){
-      on_setddP_clicked();
-   }
-
-   if (ui->filesLB->currentRow() < 0) { return; }
-   listOffset = (PartSubDirLevel > 0) ? 1 : 0;
-   setCursor(QCursor(Qt::WaitCursor));
-   DirLevel   = 0 ;
-   pDirEntryPos[0] = 0;
-   // Get count of items in listbox
-   int litc = ui->filesLB->count()-listOffset;
-   for (int p=0;p<litc;p++) { //step through listed files 
-      // see is item selected:
-      if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
-         //ui->filesLB->item(p+listOffset)->setSelected(false);
-         dpos = DirEntrySortPos[p];// Position in DIR
-         if (IsVolume(dirbuf, dpos)) { continue; }  //avoid VOL extraction
-         // Recursive subdir extraction Open SubDir, show files, and extract
-         if (IsSubDir(dirbuf, dpos)) {
-            EnterSubDir(dirbuf, dpos, dstr, true, true);
-            DirLevel++;
-            CurrentDirEntryPos = 64; // 1st 2 entries of sub dir are '.' and '..'
-            do{
-               bool intoNextSubDir = false;
-               for (UINT n=CurrentDirEntryPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
-                  if (IsEmpty(dirbuf, n)) break; //empty entry
-                  if (IsDeleted(dirbuf, n)) continue; //deleted entry
-                  GetFATFileName(dirbuf, n, dstr);
-                  if (IsFile(dirbuf, n)) { //no subdir, it's a file
-                     ExtractFile(dirbuf, n);
-                  }else if (IsSubDir(dirbuf, n)) {
-                     // its a subdir -> store pos in dir, leave n loop
-                     EnterSubDir(dirbuf, n,  dstr, true, true);
-                     DirLevel++;
-                     intoNextSubDir = true;
-                     break;
-                  }
-               }  //n loop end
-               if(intoNextSubDir){ intoNextSubDir = false; continue; }
-               //we are though, dir up
-               EnterUpDir(dirbuf, dstr, &CurrentDirEntryPos, true);
-               DirLevel--;
-               if (DirLevel == 0) { //we're on topmost level
-                  break;
-               }
-               CurrentDirEntryPos += 32; // point to next entry
-               //are we in subdir? :
-               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
-            }while( PartSubDirLevel > 0);
-            continue; //next main dir entry
-         }
-         ExtractFile(dirbuf, dpos);
-      } // if selected end
-   }  // p loop end
-   setCursor(QCursor(Qt::ArrowCursor));
-}
 
 int PadFileName(char *Instr, char* Outstr)
 {
@@ -1429,9 +1253,13 @@ int PadFileName(char *Instr, char* Outstr)
    for (i=8;n<k-1;i++) {Outstr[i]=Instr[n+1]; n++; }
    for (c=i;c<11;c++) Outstr[c]=' ';
    Outstr[c]= 0;
-   for (c=0;c<12;c++) {
-      if(Outstr[c]>64) {Outstr[c] = Outstr[c] & 0xDF; }
-   } // Make all capital
+   for (c=0;c<12;c++) {// Make all capital
+       if((Outstr[c]>96) && (Outstr[c]<123)) {Outstr[c] = Outstr[c] & 0xDF; }
+   }
+   PadLocalToTOS(Outstr); //pad ATARI special cases
+   for (c=0;c<12;c++) {// remove garbage
+       if(Outstr[c]>96) {Outstr[c] = '_'; }
+   }
    return 1;
 }
 
@@ -1513,7 +1341,7 @@ int CheckNameExistsInDir(char* Name, unsigned char* DirBuffer)
 }
 unsigned long SeekFirstFreeCluster(void)
 {
-   int m, fx;
+   unsigned int m, fx;
 
    for( m = 4; m < (2*PartTotalDataClusters+4);  m = m+2 ) {
       fx = PartFATbuffer[m]+256*PartFATbuffer[m+1] ;
@@ -1586,7 +1414,7 @@ int GemdDlg::MakeSubF(unsigned int Clun) // Create start cluster of subdirectory
 }
 int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBuffer){
 
-    int m,n;
+    unsigned long m,n;
     char subdnam[13];
     char dstr[60];
     unsigned int FileSector, EntryPos;
@@ -1660,7 +1488,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    char   LocalFileName[256];
    struct stat fparms ;
    unsigned int k, FileByteLength;
-   unsigned int n, m, FileClusterCount, EntryPos, FileSector, CurrentFileCluster, PreviousFileCluster;
+   unsigned int n, FileClusterCount, EntryPos, FileSector, CurrentFileCluster, PreviousFileCluster;
    FILE *inFile;
 
    strcpy(LocalFileName, (char*)FilePathName.toLatin1().data());   // Filename with path?
@@ -1705,7 +1533,8 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
       return(false);
    }
    // Copy name at EntryPos, add timestamp and directory flag
-   for (n=0;n<11;n++) DirBuffer[EntryPos+n]=FATFileName[n];
+   for (n=0;n<11;n++)
+       DirBuffer[EntryPos+n]=FATFileName[n];
    //Enter filelength in filerecord:
    SetFATFileLength(DirBuffer, EntryPos, FileByteLength);
    SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? NULL : &fparms);
@@ -1761,6 +1590,263 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    return(true);
 }
 
+void GemdDlg::on_opdirP_clicked()
+{
+
+   QString dir = QFileDialog::getExistingDirectory(this, tr("Select directory to write to device"), "",
+                                                QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+   if(!dir.isEmpty()){
+
+       AddDirTreeToCurrentDir(dir, dirbuf);
+
+       WriteCurrentDirBuf();
+       //Write FAT back:
+       WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
+       //Second FAT
+       WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
+       // Refresh Used/free indicator:
+       ShowPartitionUsage() ;
+       // Need to refresh listbox content
+       LoadSubDir((PartSubDirLevel == 0), true) ;
+
+       setCursor(QCursor(Qt::ArrowCursor));
+   } // if Seldfiles end
+
+
+/*
+   QFileDialog DirSelector;
+   DirSelector.setFileMode(QFileDialog::DirectoryOnly);
+   DirSelector.setOption(QFileDialog::DontUseNativeDialog,true);
+   QListView *l = DirSelector.findChild<QListView*>("listView");
+   if (l) {
+      l->setSelectionMode(QAbstractItemView::MultiSelection);
+   }
+   QTreeView *t = DirSelector.findChild<QTreeView*>();
+   if (t) {
+      t->setSelectionMode(QAbstractItemView::MultiSelection);
+   }
+   DirSelector.setWindowIcon(QIcon("://Icons/atarifolder.png"));
+   DirSelector.setWindowTitle("Select diretories to write to device");
+
+   if(DirSelector.exec() == 0){ return; }
+   if(!DirSelector.selectedFiles().isEmpty())  {
+      setCursor(QCursor(Qt::WaitCursor));
+
+      QCoreApplication::processEvents(); // refresh dialog content
+      setCursor(QCursor(Qt::WaitCursor));
+
+      int i= DirSelector.selectedFiles().count();
+      for (int k=0; k<i; k++){
+         if (!AddDirTreeToCurrentDir(DirSelector.selectedFiles().value(k), dirbuf)) { break; }
+      }
+      WriteCurrentDirBuf();
+      //Write FAT back:
+      WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
+      //Second FAT
+      WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
+      // Refresh Used/free indicator:
+      ShowPartitionUsage() ;
+      // Need to refresh listbox content
+      LoadSubDir((PartSubDirLevel == 0), true) ;
+
+      setCursor(QCursor(Qt::ArrowCursor));
+   } // if Seldfiles end
+   */
+}
+
+void GemdDlg::on_DeleteFiles_clicked()
+{
+   unsigned int CurrentDirEntryPos, button;
+   int  DirLevel, listOffset, FileRemainsLevel;
+   char message[256];
+   bool Abort = false;
+   bool YesToAll = false;
+
+   if (ui->filesLB->currentRow() < 0) { return; }
+   if ( QMessageBox::warning(this, "Deleting files!",
+                             "You are about to delete files and / or directories.\nThey can not be restored!\n\nAre you sure?",
+                             QMessageBox::Yes | QMessageBox::Cancel) == QMessageBox::Cancel) { return; }
+
+   //QMessageBox::critical(this, "Deleting!", "Deleting", QMessageBox::Cancel);
+
+   listOffset = (PartSubDirLevel > 0) ? 1 : 0;
+   setCursor(QCursor(Qt::WaitCursor));
+   DirLevel   = 0;
+   FileRemainsLevel = 0;
+   pDirEntryPos[0] = 0;
+   // Get count of items in listbox
+   int litc = ui->filesLB->count()-listOffset;
+   for (int p=0;p<litc;p++) { //step through listed files
+      // see is item selected:
+      if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
+         //ui->filesLB->item(p+listOffset)->setSelected(false);
+         dpos = DirEntrySortPos[p];// Position in DIR
+         if (IsVolume(dirbuf, dpos)) { continue; }    //avoid VOL extraction
+         GetFATFileName(dirbuf, dpos, dstr);
+         // Recursive subdir extraction Open SubDir, show files, and extract
+         // Need to store level, parent & pos in parent
+         if (IsSubDir(dirbuf, dpos)) {
+            if (!YesToAll) {
+               sprintf(message, "Delete subdirectory %s including all files below?", dstr);
+               button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+               if (button ==  QMessageBox::No){ continue; }//next entry
+               if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
+               YesToAll = (button ==  QMessageBox::YesToAll);
+            }
+            // Store pos in parent, here by selection number
+            EnterSubDir(dirbuf, dpos, false, false);
+            DirLevel++;
+            CurrentDirEntryPos = 64; // 1st 2 entries of sub dir are '.' and '..'
+            do{
+               bool intoNextSubDir = false;
+               for (UINT n=CurrentDirEntryPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
+                  if (IsEmpty(dirbuf, n)) { break; }
+                  if (IsDeleted(dirbuf, n)) { continue; }
+                  GetFATFileName(dirbuf, n, dstr);
+                  if (IsFile(dirbuf, n)) { //no subdir, it's a file
+                     if (!YesToAll) {
+                        sprintf(message, "Delete file %s?", dstr);
+                        button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+                        if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
+                        if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
+                        YesToAll = (button ==  QMessageBox::YesToAll);
+                     }
+                     EraseFile(dirbuf, n);
+                  }else if (IsSubDir(dirbuf, n)) {
+                     // its a subdir -> store pos in dir, leave n loop
+                     if (!YesToAll) {
+                        sprintf(message, "Delete subdirectory %s including all files below?", dstr);
+                        button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+                        if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
+                        if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
+                        YesToAll = (button ==  QMessageBox::YesToAll);
+                     }
+                     EnterSubDir(dirbuf, n, false, false);
+                     DirLevel++;
+                     intoNextSubDir = true;
+                     break;
+                  }
+               }  //n loop end
+               if(intoNextSubDir){ continue; }
+               //we are though
+               if (FileRemainsLevel == DirLevel){ //there wss a file left in SubDir
+                  WriteCurrentDirBuf(); //rewrite Dir
+               }
+               //dir up
+               EnterUpDir(dirbuf, dstr, &CurrentDirEntryPos, true);
+               DirLevel--;
+               //do not delete dirs not empty
+               if (FileRemainsLevel <= DirLevel) {
+                  EraseFile(dirbuf, CurrentDirEntryPos); //just mark Clusters as free
+               }
+               if (FileRemainsLevel > DirLevel) {FileRemainsLevel = DirLevel; }
+               if (DirLevel == 0) { //we're on topmost level
+                  break;
+               }
+               CurrentDirEntryPos += 32; // point to next entry
+               //are we in subdir? :
+               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
+            }while( PartSubDirLevel > 0);
+            if (Abort) { break; }
+            continue; //next main dir entry
+         }
+         if (Abort) { break; }
+         if (!YesToAll) {
+            sprintf(message, "Delete file %s?", dstr);
+            button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+            if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
+            if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
+            YesToAll = (button ==  QMessageBox::YesToAll);
+         }
+         EraseFile(dirbuf, dpos);
+      }
+      if (Abort) { break; }
+   }
+   if (!Abort) {
+      WriteCurrentDirBuf(); //rewrite Dir
+      //Write FAT back:
+      WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer);
+      //Second FAT
+      WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer);
+      // Refresh Used/free indicator:
+   }
+   ShowPartitionUsage() ;
+   // Need to refresh listbox content
+   LoadSubDir((PartSubDirLevel == 0), true) ;
+
+   setCursor(QCursor(Qt::ArrowCursor));
+}
+
+void GemdDlg::on_ExtractFiles_clicked()
+{
+   unsigned int CurrentDirEntryPos;
+   //int DirLevel;
+   int listOffset;
+
+   #ifdef FRANKS_DEBUG
+   #ifdef WINDOWS
+   strcpy(DestDir, "D:\\Projekte\\tools\\build-DrImg\\testoutput");
+   #else
+   strcpy(DestDir, "/home/frank/Projekte/ATARI/DrImg/testoutput");
+   #endif
+   if (chdir(DestDir)) {}
+   #endif
+   if(DestDir[0] == '\0'){
+      on_setddP_clicked();
+   }
+
+   if (ui->filesLB->currentRow() < 0) { return; }
+   listOffset = (PartSubDirLevel > 0) ? 1 : 0;
+   setCursor(QCursor(Qt::WaitCursor));
+   DirLevel   = 0 ;
+   pDirEntryPos[0] = 0;
+   // Get count of items in listbox
+   int litc = ui->filesLB->count()-listOffset;
+   for (int p=0;p<litc;p++) { //step through listed files
+      // see is item selected:
+      if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
+         //ui->filesLB->item(p+listOffset)->setSelected(false);
+         dpos = DirEntrySortPos[p];// Position in DIR
+         if (IsVolume(dirbuf, dpos)) { continue; }  //avoid VOL extraction
+         // Recursive subdir extraction Open SubDir, show files, and extract
+         if (IsSubDir(dirbuf, dpos)) {
+            EnterSubDir(dirbuf, dpos, true, true);
+            DirLevel++;
+            CurrentDirEntryPos = 64; // 1st 2 entries of sub dir are '.' and '..'
+            do{
+               bool intoNextSubDir = false;
+               for (UINT n=CurrentDirEntryPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
+                  if (IsEmpty(dirbuf, n)) break; //empty entry
+                  if (IsDeleted(dirbuf, n)) continue; //deleted entry
+                  GetFATFileName(dirbuf, n, dstr);
+                  if (IsFile(dirbuf, n)) { //no subdir, it's a file
+                     ExtractFile(dirbuf, n);
+                  }else if (IsSubDir(dirbuf, n)) {
+                     // its a subdir -> store pos in dir, leave n loop
+                     EnterSubDir(dirbuf, n, true, true);
+                     DirLevel++;
+                     intoNextSubDir = true;
+                     break;
+                  }
+               }  //n loop end
+               if(intoNextSubDir){ intoNextSubDir = false; continue; }
+               //we are though, dir up
+               EnterUpDir(dirbuf, dstr, &CurrentDirEntryPos, true);
+               DirLevel--;
+               if (DirLevel == 0) { //we're on topmost level
+                  break;
+               }
+               CurrentDirEntryPos += 32; // point to next entry
+               //are we in subdir? :
+               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
+            }while( PartSubDirLevel > 0);
+            continue; //next main dir entry
+         }
+         ExtractFile(dirbuf, dpos);
+      } // if selected end
+   }  // p loop end
+   setCursor(QCursor(Qt::ArrowCursor));
+}
 
 void GemdDlg::on_AddFiles_clicked()
 {

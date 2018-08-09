@@ -10,5 +10,6 @@
         <file>Icons/Quit.png</file>
         <file>Icons/atarifolder.png</file>
         <file>Icons/DeleteFiles.png</file>
+        <file>Icons/AddDir.png</file>
     </qresource>
 </RCC>

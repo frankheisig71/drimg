@@ -198,7 +198,7 @@
   <widget class="QPushButton" name="ExtractFiles">
    <property name="geometry">
     <rect>
-     <x>270</x>
+     <x>350</x>
      <y>230</y>
      <width>64</width>
      <height>64</height>
@@ -227,7 +227,7 @@
   <widget class="QPushButton" name="opdirP">
    <property name="geometry">
     <rect>
-     <x>270</x>
+     <x>350</x>
      <y>160</y>
      <width>64</width>
      <height>64</height>
@@ -244,7 +244,7 @@
    </property>
    <property name="icon">
     <iconset>
-     <normaloff>Icons/OpenDir.png</normaloff>Icons/OpenDir.png</iconset>
+     <normaloff>Icons/AddDir.png</normaloff>Icons/AddDir.png</iconset>
    </property>
    <property name="iconSize">
     <size>
@@ -308,8 +308,8 @@
   <widget class="QPushButton" name="setddP">
    <property name="geometry">
     <rect>
-     <x>420</x>
-     <y>160</y>
+     <x>270</x>
+     <y>230</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -364,8 +364,8 @@
   <widget class="QPushButton" name="AddFiles">
    <property name="geometry">
     <rect>
-     <x>340</x>
-     <y>230</y>
+     <x>270</x>
+     <y>160</y>
      <width>64</width>
      <height>64</height>
     </rect>
@@ -396,7 +396,7 @@
   <widget class="QPushButton" name="newfP">
    <property name="geometry">
     <rect>
-     <x>340</x>
+     <x>420</x>
      <y>160</y>
      <width>64</width>
      <height>64</height>

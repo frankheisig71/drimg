@@ -5,7 +5,7 @@
 #include <QModelIndex>
 
 #define FRANKS_DEBUG
-//#define WINDOWS
+#define WINDOWS
 
 namespace Ui {
 class GemdDlg;
@@ -23,16 +23,17 @@ public:
     void loadroot(bool doList);
     void ShowPartitionUsage();
     //void opensubd(int index, bool doList);
-    void OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, bool doList);
+    void OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, bool doList);
     void subdirh(bool doList);
     void FATDirUp(unsigned char* DirBuffer, char* NameBuffer, bool doList);
     void LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer);
     void LoadSubDir(bool IsRoot, bool doList);
     int  ExtractFile(unsigned char* DirBuffer, int pos);
     void EraseFile(unsigned char* DirBuffer, int EntryPos);
+    void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams);
     void GetFATFileName(unsigned char* DirBuffer, int DirPos, char* NameBuffer);
     void WriteCurrentDirBuf(void);
-    void EnterSubDir(unsigned char* DirBuffer, int EntryPos, char* NameBuffer, bool MakeLocalDir, bool EnterLocalDir);
+    void EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocalDir, bool EnterLocalDir);
     int  MakeSubF(unsigned int Clun);
     bool EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* EntryPos, bool ChangeLocalDir);
     int  AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBuffer);
