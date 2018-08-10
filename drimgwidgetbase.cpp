@@ -132,6 +132,8 @@ HANDLE OpenDevice(const char* name, const char * mode)
 
     if (strstr(mode, "r") != NULL) { CrMode = CrMode | GENERIC_READ; }
     if (strstr(mode, "w") != NULL) { CrMode = CrMode | GENERIC_WRITE; }
+    if (strstr(mode, "r+") != NULL) { CrMode = GENERIC_READ | GENERIC_WRITE; }
+    if (strstr(mode, "w+") != NULL) { CrMode = GENERIC_READ | GENERIC_WRITE; }
 
 
     fh = CreateFileA(name,
@@ -875,11 +877,10 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
              *writtenSec += 0x800;
              prog = 99*(m << 11)/SecCnt;
              if (prog>prnxt) {
-                #ifndef WINDOWS
-                //if (IsPhysDevice(f_out)){
-                   fdatasync(fileno(f_out));
-                   fflush(f_out);
-                //}
+                #ifdef WINDOWS
+                FlushFileBuffers(f_out);
+                #else
+                fdatasync(fileno(f_out));
                 #endif
                 ui->progressBar1->setValue(prog+1);
                 prnxt += 1;
@@ -894,11 +895,10 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
              *writtenSec += 1;
              prog = 99*m/SecCnt;
              if (prog>prnxt) {
-                #ifndef WINDOWS
-                //if (IsPhysDevice(f_out)){
-                   fdatasync(fileno(f_out));
-                   fflush(f_out);
-                //}
+                #ifdef WINDOWS
+                FlushFileBuffers(f_out);
+                #else
+                fdatasync(fileno(f_out));
                 #endif
                 ui->progressBar1->setValue(prog+1);
                 prnxt += 1;
