@@ -5,7 +5,7 @@
 #include <QModelIndex>
 
 //#define FRANKS_DEBUG
-#define WINDOWS
+//#define WINDOWS
 
 namespace Ui {
 class GemdDlg;

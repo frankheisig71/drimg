@@ -652,13 +652,13 @@ int LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, QString* 
    return 0 ;
 }
 
-static const byte TOSfield[19] = {6,7,14,15,16,17,18,19,20,21,22,23,24,27,28,29,30,31,0};
-static const byte DOSfield[19] = {208,209,210,211,224,225,226,227,228,229,230,231,232,233,234,235,236,237,0};
+static const unsigned char TOSfield[19] = {6,7,14,15,16,17,18,19,20,21,22,23,24,27,28,29,30,31,0};
+static const unsigned char DOSfield[19] = {208,209,210,211,224,225,226,227,228,229,230,231,232,233,234,235,236,237,0};
 
 void PadTOStoLocal(char* Name){
     //remove garbage
     for(int i=0; i<12; i++){
-       if ((byte)Name[i] > 126) {
+       if ((unsigned char)Name[i] > 126) {
            Name[i] = '_';
        }
     }
@@ -666,7 +666,7 @@ void PadTOStoLocal(char* Name){
     for(int i=0; i<12; i++){
       if (Name[i] == 0) { break; }
       for(int j=0; j<18;j++){
-         if((byte)Name[i] == TOSfield[j]){
+         if((unsigned char)Name[i] == TOSfield[j]){
             Name[i] = DOSfield[j];
             break;
          }
@@ -677,7 +677,7 @@ void PadLocalToTOS(char* Name){
    for(int i=0; i<12; i++){
       if (Name[i] == 0) { break; }
       for(int j=0; j<18;j++){
-         if((byte)Name[i] == DOSfield[j]){
+         if((unsigned char)Name[i] == DOSfield[j]){
             Name[i] = TOSfield[j];
             break;
          }
@@ -972,7 +972,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
                 #ifdef WINDOWS
                 , fhout
                 #else
-                , dstr
+                , name
                 #endif
                 );
    }
