@@ -1069,7 +1069,7 @@
     </rect>
    </property>
    <property name="text">
-    <string>Drives &gt;4GB read only</string>
+    <string>don't show Drives &gt;4GB</string>
    </property>
    <property name="shortcut">
     <string>Alt+G</string>

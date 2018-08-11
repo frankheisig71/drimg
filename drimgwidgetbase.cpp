@@ -415,6 +415,7 @@ int drimgwidgetbase::detSD()
 
    drisize = GetDeviceLength(devStr);
    if (drisize) {
+      if ((ov2ro == 0) || (drisize <= 0x100000000))
       finp = OpenDevice(devStr,"wb"); // CD ROMs will not open
       if (finp != FILE_OPEN_FAILED){
          exdl[detCount] = drisize/512; // Sector count
@@ -447,22 +448,22 @@ void drimgwidgetbase::detSDloop()
    ui->listBox1->clear();
    detCount = 0;
    act      = 1;
-   for (int n=0;n<20;n++)
+   for (int n=0;n<26;n++)
    {
       #ifdef WINDOWS
-      devStr1[4] = 'E'+n; //we're not checking /dev/sda and /dev/sdb
+      devStr1[4] = 'E'+n; //we're not checking A:\ to D:\
       strcpy(devStr,devStr1);
       #else
-      if (n<6) { devStr1[5] = 's' ;
-         devStr1[7] = 'c'+n; //we're not checking /dev/sda and /dev/sdb
+      if (n<9) { devStr1[5] = 's' ;
+         devStr1[7] = 'b'+n; //we're not checking /dev/sda
          strcpy(devStr,devStr1);
       }
-      else if (n<12) { devStr1[5] = 'h' ;
-         devStr1[7] = 'c'+n-6; //we're not checking /dev/hda and /dev/hdb
+      else if (n<18) { devStr1[5] = 'h' ;
+         devStr1[7] = 'b'+n-9; //we're not checking /dev/hda
          strcpy(devStr,devStr1);
       }
       else {
-         devStr2[11] = '0'+n-12; //but we're checking /dev/mmcblk0 to /dev/mmcblk7
+         devStr2[11] = '0'+n-18; //but we're checking /dev/mmcblk0 to /dev/mmcblk7
          strcpy(devStr,devStr2);
       }
       #endif
@@ -1228,7 +1229,7 @@ void drimgwidgetbase::on_writeButton_clicked()
       }
       else{
          for (int k=0; k<9; k++) physd[k] = detDev[k][selected];
-         if (( ov2ro ) && ( SecCnt>0x20000000)) {
+         if (( ov2ro ) && ( SecCnt>0x800000)) {
             QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
             act=0;
             return;

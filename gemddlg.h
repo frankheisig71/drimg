@@ -31,6 +31,11 @@ public:
     void EraseFile(unsigned char* DirBuffer, int EntryPos);
     void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams);
     void GetFATFileName(unsigned char* DirBuffer, int DirPos, char* NameBuffer);
+    #ifdef WINDOWS
+    void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, HANDLE fHandle);
+    #else
+    void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* FileName);
+    #endif
     void WriteCurrentDirBuf(void);
     void WriteFAT(void);
     void EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocalDir, bool EnterLocalDir, bool ReadOnly);

@@ -37,6 +37,7 @@
  #include <windows.h>
  #include <sys/stat.h>
 #else
+ #include <sys/time.h>
  #include <utime.h>
 #endif
 #include <sys/stat.h>
@@ -229,7 +230,7 @@ void GemdDlg::OpenDialog()
    // Open file or physical drive:
    if (selected<16){
       for (int k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
-      if ((ov2ro)  && ( SecCnt>0x20000000)) {
+      if ((ov2ro)  && ( SecCnt>0x800000)) {
          fhdl = OpenDevice(physd, "rb" );
       }
       else{
@@ -810,10 +811,13 @@ void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocal
    if (!ReadOnly) { WriteCurrentDirBuf(); }
    OpenFATSubDir(DirBuffer, EntryPos, false);
    if(MakeLocalDir){
+      unsigned short fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
+      unsigned short ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
       #ifdef WINDOWS
       o = mkdir(DirName);
       #else
       o = mkdir(DirName,0777);
+      if (!timestCur) { SetLocalFileDateTime(fdat, ftim, DirName); }
       #endif
    }
    if (EnterLocalDir) {
@@ -875,9 +879,9 @@ void GemdDlg::on_timeCB_clicked()
 #ifdef WINDOWS
 //file time will locally be stored as UTC time and shown as Local time on local filesystem
 //
-void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, HANDLE fHandle)
+void GemdDlg::SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, HANDLE fHandle)
 #else
-void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* FileName)
+void GemdDlg::SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* FileName)
 #endif
 {
     #ifdef WINDOWS
@@ -915,7 +919,10 @@ void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* File
     fildt.modtime = tim;
     if (utime(FileName, &fildt) != 0){
        int i=errno;
-
+       qhm.setNum(i);
+       qhm.insert(0, "File set time error. (");
+       qhm.append(")");
+       QMessageBox::critical(this, FileName, qhm, QMessageBox::Ok, QMessageBox::Ok);
     }
     #endif
 }
@@ -968,15 +975,14 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       rc = 1;
    }
    else if (!timestCur) {
-      SetLocalFileDateTime(fdat, ftim
-                #ifdef WINDOWS
-                , fhout
-                #else
-                , name
-                #endif
-                );
+      #ifdef WINDOWS
+      SetLocalFileDateTime(fdat, ftim, fhout);
+      CloseFileX(fhout);
+      #else
+      CloseFileX(fhout);
+      SetLocalFileDateTime(fdat, ftim, name);
+      #endif
    }
-   CloseFileX(fhout);
    return rc;
 }
 
