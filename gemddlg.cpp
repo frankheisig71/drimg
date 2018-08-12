@@ -656,35 +656,131 @@ int LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, QString* 
 static const unsigned char TOSfield[19] = {6,7,14,15,16,17,18,19,20,21,22,23,24,27,28,29,30,31,0};
 static const unsigned char DOSfield[19] = {208,209,210,211,224,225,226,227,228,229,230,231,232,233,234,235,236,237,0};
 
-void PadTOStoLocal(char* Name){
-    //remove garbage
+int PadtoFATFileName(char *Instr, char* Outstr)
+{
+   int i, n, k, c;
+   // Look where is .
+   k = strlen(Instr);
+   for (n=0; n<k; n++) {
+      if ( Instr[n] == '.' ) break;
+   }
+   if (k>8) {
+      if (n>8) return 0 ;
+   }// Invalid filename
+   strncpy(Outstr,Instr,n+1) ;
+   // Padd name with  spaces by need
+   for (c=n;c<8;c++){ Outstr[c]=' '; }
+   // Extension if is
+   for (i=8;n<k-1;i++) {Outstr[i]=Instr[n+1]; n++; }
+   for (c=i;c<11;c++) Outstr[c]=' ';
+   Outstr[c]= 0;
+   return 1;
+}
+
+void PadTOStoLocal(char* TOSName, char*DOSName){
+    int p = 0;
+
+    //pad TOS specials
     for(int i=0; i<12; i++){
-       if ((unsigned char)Name[i] > 126) {
-           Name[i] = '_';
+       if (((unsigned char)TOSName[i] > 126) ||  (((unsigned char)TOSName[i] < 32) && ((unsigned char)TOSName[i] > 0))){
+          sprintf(DOSName, "%s%s%i%s", DOSName, "[#", (unsigned char)TOSName[i], "]");
+          p = strlen(DOSName);
+       }
+       else{
+          DOSName[p++] = TOSName[i];
+          DOSName[p] = 0;
        }
     }
-    // pad TOS specials
-    for(int i=0; i<12; i++){
-      if (Name[i] == 0) { break; }
-      for(int j=0; j<18;j++){
-         if((unsigned char)Name[i] == TOSfield[j]){
-            Name[i] = DOSfield[j];
-            break;
-         }
-      }
+}
+void PadLocalToTOS(QString DOSName, char* TOSName){
+   int p = 0;
+   int i = 0;
+   int l1 = DOSName.length();
+   const char* _DOSName;
+
+   QByteArray ba = DOSName.toLatin1();
+   _DOSName = ba.data();
+
+   while(i<l1){
+     if ((DOSName[i] == '[') && (i<l1-3)) {
+        if (DOSName[i+1] == '#'){
+           int e = i+2;
+           while ((e<l1) && (DOSName[e] != ']')) { e++;}
+           if (e < l1) {
+               bool okay = false;
+               QString num = DOSName.mid(i+2, e-i-2);
+               int o = num.toInt(&okay);
+               if(okay){
+                  TOSName[p++] = (unsigned char)o;
+                  TOSName[p] = 0;
+                  i = e+1;
+                  continue;
+               }
+           }
+        }
+     }
+     TOSName[p++] = _DOSName[i++];
+     TOSName[p] = 0;
    }
 }
-void PadLocalToTOS(char* Name){
-   for(int i=0; i<12; i++){
-      if (Name[i] == 0) { break; }
-      for(int j=0; j<18;j++){
-         if((unsigned char)Name[i] == DOSfield[j]){
-            Name[i] = TOSfield[j];
-            break;
+
+
+int MakeFATFileName(QString SrcFileName, char* DestFileName)
+{
+   int  i, l1, l2, l3;
+   bool stopCount;
+   QString qhm, fname, fext;
+   char TOSfname[256];
+
+   QFileInfo FileInfo(SrcFileName);
+   fname = FileInfo.fileName();
+   fext  = FileInfo.suffix();
+   l2 = fext.length();
+   l1 = fname.length();
+   if (l2 > 0) { l1 -= (l2 + 1); }
+   //count usable length considering TOS special chars: [#xyz]
+   l2 = 0; l3 = 0;
+   stopCount = false;
+   for(i=0;i<l1;i++){
+      l3++;
+      if ((fname[i] == '[') && (i < l1-3)) {
+         if (fname[i+1] == '#'){
+            stopCount = true;
          }
       }
+      if ((fname[i] == ']') && (stopCount)){
+         stopCount = false;
+      }
+      if (!stopCount) {l2++;}
+      if (l2 == 8) {break;}
    }
+   qhm = fname.left(l3);
+   fname = qhm.toUpper();
+   if (!fext.isEmpty()){
+      l1 = fext.length();
+      l2 = 0; l3 = 0;
+      stopCount = false;
+      for(i=0;i<l1;i++){
+         l3++;
+         if ((fext[i] == '[') && (i < l1-3)) {
+            if (fext[i+1] == '#'){
+               stopCount = true;
+            }
+         }
+         if ((fext[i] == ']') && (stopCount)){
+            stopCount = false;
+         }
+         if (!stopCount) {l2++;}
+         if (l2 == 3) {break;}
+      }
+      qhm = fext.left(l3);
+      fname = fname + '.' + qhm.toUpper();
+   }
+   PadLocalToTOS(fname, TOSfname);
+   return(PadtoFATFileName(TOSfname, DestFileName));
 }
+
+
 void GemdDlg::LoadSubDir(bool IsRoot, bool doList)
 {
    unsigned int n, i;
@@ -805,23 +901,25 @@ void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocal
 {
    int o;
    char DirName[13];
+   char localName[256];
 
    pDirEntryPos[PartSubDirLevel] = EntryPos; //we need the position if we come back up
    GetFATFileName(DirBuffer, EntryPos, DirName);
    if (!ReadOnly) { WriteCurrentDirBuf(); }
    OpenFATSubDir(DirBuffer, EntryPos, false);
+   PadTOStoLocal(DirName, localName);
    if(MakeLocalDir){
       unsigned short fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
       unsigned short ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
       #ifdef WINDOWS
-      o = mkdir(DirName);
+      o = mkdir(localName);
       #else
-      o = mkdir(DirName,0777);
+      o = mkdir(localName,0777);
       if (!timestCur) { SetLocalFileDateTime(fdat, ftim, DirName); }
       #endif
    }
    if (EnterLocalDir) {
-      o = chdir(DirName);
+      o = chdir(localName);
    }
    if(o) {/* something to do here */}
    ui->dirLabel->setText(DirName);
@@ -936,7 +1034,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    unsigned char DataBuffer[0x10000];  // 128 sector
    unsigned short fdat, ftim ;
    int RemainingBytes;
-   char name[13];
+   char name[13], localName[256];
 
    //load file from drive/image:
    StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
@@ -946,7 +1044,8 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
    GetFATFileName(DirBuffer, EntryPos, name);
    // open save file:
-   fhout = OpenFileX(name, "wb");
+   PadTOStoLocal(name, localName);
+   fhout = OpenFileX(localName, "wb");
    if (fhout == FILE_OPEN_FAILED) {
       QString qhm;
       qhm.setNum(GetLastError());
@@ -979,8 +1078,10 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       SetLocalFileDateTime(fdat, ftim, fhout);
       CloseFileX(fhout);
       #else
+      char localName[256];
       CloseFileX(fhout);
-      SetLocalFileDateTime(fdat, ftim, name);
+      PadTOStoLocal(name, localName);
+      SetLocalFileDateTime(fdat, ftim, localName);
       #endif
    }
    return rc;
@@ -1005,7 +1106,6 @@ void GemdDlg::GetFATFileName(unsigned char* DirBuffer, int EntryPos, char* NameB
 	  }
    }
    NameBuffer[i] = 0 ; // String term.
-   PadTOStoLocal(NameBuffer);
    ui->exwht->setText(NameBuffer);
    //ui->errti->setText(" ");
    QCoreApplication::processEvents();
@@ -1273,80 +1373,6 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
 
 
 
-int PadFileName(char *Instr, char* Outstr)
-{
-   int i, n, k, c;
-   // Look where is .
-   k = strlen(Instr);
-   for (n=0; n<k; n++) {
-      if ( Instr[n] == '.' ) break;
-   }
-   if (k>8) {
-      if (n>8) return 0 ;
-   }// Invalid filename
-   strncpy(Outstr,Instr,n+1) ;
-   // Padd name with  spaces by need
-   for (c=n;c<8;c++){ Outstr[c]=' '; }
-   // Extension if is
-   for (i=8;n<k-1;i++) {Outstr[i]=Instr[n+1]; n++; }
-   for (c=i;c<11;c++) Outstr[c]=' ';
-   Outstr[c]= 0;
-   for (c=0;c<12;c++) {// Make all capital
-       if((Outstr[c]>96) && (Outstr[c]<123)) {Outstr[c] = Outstr[c] & 0xDF; }
-   }
-   PadLocalToTOS(Outstr); //pad ATARI special cases
-   for (c=0;c<12;c++) {// remove garbage
-       if(Outstr[c]>96) {Outstr[c] = '_'; }
-   }
-   return 1;
-}
-
-int MakeFATFileName(char* SrcFileName, char* DestFileName)
-{
-   int  length, c, k, o, i, p;
-   char curzx[128];
-   char filext[20];
-   char fnamb[128];
-
-   length = strlen(SrcFileName) ;
-   // extract filename only:
-   p = 0;
-   for (c=length-1; c>0; c--){
-      #ifdef WINDOWS
-      if ( SrcFileName[c] == '\\' ){break;}
-      #endif
-      if ( SrcFileName[c] == '/' ) {break;}
-   }
-   c++ ;
-   while (c<length)
-   {
-      curzx[p++] = SrcFileName[c++];
-      curzx[p] = 0;
-   }
-   // Convert filename to 8.3 cap format
-   length = strlen(curzx) ;
-   o = 0;
-   i = 0;
-   for (c=0;c<length;c++){
-      k=curzx[c];
-      if (k==' ') k='_' ; // Space to under
-      if ((!o) && (k=='.')) { o = c;} // get pos of first .
-      if (o) { filext[i] = k; i++; } // build extension
-      fnamb[c] = k ;
-   }
-   fnamb[c] = 0;
-   filext[i]=0;
-   // Limit filename base to 8 length
-   if (o) {
-      fnamb[o] = 0;
-      if (o>8) fnamb[8] = 0 ; // max 8 char
-      if (strlen(filext)>4) filext[4]=0;
-      strcat(fnamb,filext);
-   }
-   else if (length>8) fnamb[8] = 0 ;
-   //exwht->setText(fnamb);
-   return(PadFileName(fnamb, DestFileName));
-}
 
 bool GetFirstFreeDirSlot(unsigned char* DirBuffer, unsigned int* NewEntryPos)
 {
@@ -1458,7 +1484,7 @@ int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBu
     unsigned int FileSector, EntryPos;
 
     strcpy(subdnam,(char*)FilePathName.toLatin1().data());
-    char res = PadFileName(subdnam, dstr) ;
+    char res = PadtoFATFileName(subdnam, dstr) ;
     if (!res) {
        QMessageBox::critical(this, tr("Invalid filename!"), tr("Must have dot before ext."), QMessageBox::Cancel, QMessageBox::Cancel);
        return -1;
@@ -1530,7 +1556,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    FILE *inFile;
 
    strcpy(LocalFileName, (char*)FilePathName.toLatin1().data());   // Filename with path?
-   MakeFATFileName(LocalFileName, FATFileName);
+   MakeFATFileName(FilePathName, FATFileName);
    ui->exwht->setText(FATFileName);   // show corrected filename
    QCoreApplication::processEvents();
    //sleep(1); //testing

@@ -451,7 +451,7 @@ void drimgwidgetbase::detSDloop()
    for (int n=0;n<26;n++)
    {
       #ifdef WINDOWS
-      devStr1[4] = 'E'+n; //we're not checking A:\ to D:\
+      devStr1[4] = 'E'+n; //we're not checking A: to D:
       strcpy(devStr,devStr1);
       #else
       if (n<9) { devStr1[5] = 's' ;
