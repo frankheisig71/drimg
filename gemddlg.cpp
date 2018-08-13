@@ -32,14 +32,6 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#ifdef WINDOWS
- #include <time.h>
- #include <windows.h>
- #include <sys/stat.h>
-#else
- #include <sys/time.h>
- #include <utime.h>
-#endif
 #include <sys/stat.h>
 
 typedef unsigned long  ULONG;
@@ -680,9 +672,11 @@ int PadtoFATFileName(char *Instr, char* Outstr)
 void PadTOStoLocal(char* TOSName, char*DOSName){
     int p = 0;
 
-    //pad TOS specials
+    DOSName[0] = '\0';
     for(int i=0; i<12; i++){
-       if (((unsigned char)TOSName[i] > 126) ||  (((unsigned char)TOSName[i] < 32) && ((unsigned char)TOSName[i] > 0))){
+       if ((unsigned char)TOSName[i] == 0){ break; }
+       if (((unsigned char)TOSName[i] > 126) ||  ((unsigned char)TOSName[i] < 32)){
+          //pad TOS specials
           sprintf(DOSName, "%s%s%i%s", DOSName, "[#", (unsigned char)TOSName[i], "]");
           p = strlen(DOSName);
        }
@@ -1078,9 +1072,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       SetLocalFileDateTime(fdat, ftim, fhout);
       CloseFileX(fhout);
       #else
-      char localName[256];
       CloseFileX(fhout);
-      PadTOStoLocal(name, localName);
       SetLocalFileDateTime(fdat, ftim, localName);
       #endif
    }
