@@ -1,6 +1,15 @@
 #ifndef GEMDDLG_H
 #define GEMDDLG_H
 
+#ifdef WINDOWS
+ #include <time.h>
+ #include <windows.h>
+ #include <sys/stat.h>
+#else
+ #include <sys/time.h>
+ #include <utime.h>
+#endif
+#include <sys/stat.h>
 #include <QDialog>
 #include <QModelIndex>
 

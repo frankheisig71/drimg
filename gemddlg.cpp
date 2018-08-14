@@ -32,7 +32,6 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <sys/stat.h>
 
 typedef unsigned long  ULONG;
 typedef unsigned int   UINT;
@@ -81,6 +80,7 @@ extern long long GetFileLength64(HANDLE fh);
 extern long GetFileLength(HANDLE fh);
 extern long SeekFileX(HANDLE fh, int offset, int origin);
 extern long long SeekFileX64(HANDLE fh, long long offset, int origin);
+extern bool IsPhysDevice(HANDLE f);
 #else
 extern FILE* OpenDevice(const char* name, const char * mode);
 extern FILE* OpenFileX(const char* name, const char * mode);
@@ -95,6 +95,7 @@ extern long GetFileLength(FILE* fh);
 extern long SeekFileX(FILE* fh, int offset, int origin);
 extern long long SeekFileX64(FILE* fh, long long offset, int origin);
 extern int GetLastError(void);
+extern bool IsPhysDevice(FILE* f);
 #endif
 
 #ifdef WINDOWS
@@ -102,6 +103,8 @@ static HANDLE fhdl, fhout;
 #define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
 #else
 static FILE *fhdl = nullptr, *fhout = nullptr;
+static struct stat fileStatus;
+static bool fileStatusValid = false;
 #define FILE_OPEN_FAILED NULL
 #endif
 
@@ -619,10 +622,10 @@ void GemdDlg::WriteCurrentDirBuf(void)
 {
    unsigned long CurrentBufOffs = 0;
 
-   if ( PartSubDirLevel == 0 ) WriteSectors( PartFirstRootDirSector, PartRootDirSectors, dirbuf, true);
+   if ( PartSubDirLevel == 0 ) WriteSectors( PartFirstRootDirSector, PartRootDirSectors, dirbuf, false);
    else  {
       for (unsigned int i=0; i<DirCurrentClusterCnt; i++){
-         WriteSectors( DirCurrentClustes[i], PartSectorsPerCluster, dirbuf+CurrentBufOffs, true);
+         WriteSectors( DirCurrentClustes[i], PartSectorsPerCluster, dirbuf+CurrentBufOffs, false);
          CurrentBufOffs = CurrentBufOffs+PartSectorsPerCluster*PartSectorSize;
       }
       //WriteSectors( 0, 0, NULL, true); //just sync
@@ -630,7 +633,7 @@ void GemdDlg::WriteCurrentDirBuf(void)
 }
 void GemdDlg::WriteFAT(void){
    //Write FAT back:
-   WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer, true);
+   WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer, false);
    //Second FAT
    WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer, true);
    ShowPartitionUsage() ;
@@ -948,6 +951,12 @@ void GemdDlg::on_setddP_clicked()
    {
       strcpy(DestDir, (char*)fileName.toLatin1().data());
       chdir(DestDir);
+      #ifndef WINDOWS
+      if (stat(DestDir, &fileStatus) != 0){
+          QMessageBox::critical(this, "Error", "Getting dir status failed.", QMessageBox::Ok, QMessageBox::Ok);
+          fileStatusValid = false;
+      } else { fileStatusValid = true; }
+      #endif
    }
 }
 
