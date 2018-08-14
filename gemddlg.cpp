@@ -1075,7 +1075,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       CloseFileX(fhout);
       SetLocalFileDateTime(fdat, ftim, localName);
       #endif
-   }
+   } else { CloseFileX(fhout); }
    return rc;
 }
 
@@ -1226,6 +1226,15 @@ void SortFATNames(unsigned char* DirBuffer, unsigned int* UnSortList, unsigned i
    QStringList DirNameList;
    QStringList FileNameList;
    unsigned int i, k;
+
+   /************************************/
+   //do no sorting
+   for (i=0; i<DirRawFilelist.count(); i++){
+       SortList[i] = UnSortList[i];
+       SortIndex[i] = i;
+   }
+   return;
+   /************************************/
 
    i = 0;
    for (QStringList::iterator sl = DirRawFilelist.begin(); sl != DirRawFilelist.end(); ++sl) {
@@ -1820,6 +1829,7 @@ void GemdDlg::on_ExtractFiles_clicked()
    unsigned int CurrentDirEntryPos;
    //int DirLevel;
    int listOffset;
+   char name[64];
 
    #ifdef FRANKS_DEBUG
    #ifdef WINDOWS
@@ -1850,18 +1860,21 @@ void GemdDlg::on_ExtractFiles_clicked()
          if (IsSubDir(dirbuf, dpos)) {
             EnterSubDir(dirbuf, dpos, true, true, true);
             DirLevel++;
-            CurrentDirEntryPos = 64; // 1st 2 entries of sub dir are '.' and '..'
+            CurrentDirEntryPos = 0; // 1st 2 entries of sub dir are '.' and '..'
             do{
                bool intoNextSubDir = false;
                for (UINT n=CurrentDirEntryPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
                   if (IsEmpty(dirbuf, n)) break; //empty entry
                   if (IsDeleted(dirbuf, n)) continue; //deleted entry
-                  GetFATFileName(dirbuf, n, dstr);
+                  GetFATFileName(dirbuf, n, name);
+                  if((name[0] == '.') && (name[1] == '\0')) continue;
+                  if((name[0] == '.') && (name[1] == '.') && (name[2] == '\0')) continue;
                   if (IsFile(dirbuf, n)) { //no subdir, it's a file
                      ExtractFile(dirbuf, n);
                   }else if (IsSubDir(dirbuf, n)) {
                      // its a subdir -> store pos in dir, leave n loop
                      EnterSubDir(dirbuf, n, true, true, true);
+                     CurrentDirEntryPos = 0;
                      DirLevel++;
                      intoNextSubDir = true;
                      break;
@@ -1869,7 +1882,7 @@ void GemdDlg::on_ExtractFiles_clicked()
                }  //n loop end
                if(intoNextSubDir){ intoNextSubDir = false; continue; }
                //we are though, dir up
-               EnterUpDir(dirbuf, dstr, &CurrentDirEntryPos, true, false);
+               EnterUpDir(dirbuf, name, &CurrentDirEntryPos, true, false);
                DirLevel--;
                if (DirLevel == 0) { //we're on topmost level
                   break;
