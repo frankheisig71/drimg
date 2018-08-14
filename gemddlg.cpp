@@ -1227,15 +1227,6 @@ void SortFATNames(unsigned char* DirBuffer, unsigned int* UnSortList, unsigned i
    QStringList FileNameList;
    unsigned int i, k;
 
-   /************************************/
-   //do no sorting
-   for (i=0; i<DirRawFilelist.count(); i++){
-       SortList[i] = UnSortList[i];
-       SortIndex[i] = i;
-   }
-   return;
-   /************************************/
-
    i = 0;
    for (QStringList::iterator sl = DirRawFilelist.begin(); sl != DirRawFilelist.end(); ++sl) {
        QString CurrentItem = *sl;
