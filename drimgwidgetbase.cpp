@@ -297,6 +297,7 @@ FILE* OpenDevice(const char* name, const char * mode){
           }
        }
     }
+    LastIOError = errno;
     return buf;
 }
 FILE* OpenFileX(const char* name, const char * mode){

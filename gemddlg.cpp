@@ -48,6 +48,7 @@ extern int selected;
 extern char detDev[13][16] ;
 extern char physd[13];
 extern char loadedF[256] ;
+extern long LastIOError;
 extern int form;
 extern int clust ;
 extern int status ;
@@ -501,6 +502,15 @@ unsigned int GetFreeClusters(void)
    }
    return(i);
 }
+void GemdDlg::ShowErrorDialog(const char* message, int number){
+    QString qhm;
+    qhm.setNum(number);
+    qhm.insert(0, " (");
+    qhm.insert(0, message);
+    qhm.append(")");
+    QMessageBox::critical(this, "Error", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+}
+
 
 void GemdDlg::ShowPartitionUsage()
 {
@@ -579,11 +589,7 @@ unsigned long GemdDlg::WriteSectors( int StartSector, int Count, unsigned char *
           failed = (written < Count*PartSectorSize);
        }
        if (failed) {
-          QString qhm;
-          qhm.setNum(GetLastError());
-          qhm.insert(0, "Drive/file write error. (");
-          qhm.append(")");
-          QMessageBox::critical(this, "Error", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+          ShowErrorDialog("Drive/file write error.", LastIOError);
        }
     }
     if(sync) {
@@ -953,9 +959,23 @@ void GemdDlg::on_setddP_clicked()
       chdir(DestDir);
       #ifndef WINDOWS
       if (stat(DestDir, &fileStatus) != 0){
-          QMessageBox::critical(this, "Error", "Getting dir status failed.", QMessageBox::Ok, QMessageBox::Ok);
+          ShowErrorDialog("Getting dir status failed.", errno);
           fileStatusValid = false;
       } else { fileStatusValid = true; }
+      //debug
+      /*
+      if (fileStatusValid){
+         QString qhm;
+         struct passwd *pw = getpwuid(fileStatus.st_uid);
+         struct group *grp = getgrgid(fileStatus.st_gid);
+         qhm.clear();
+         qhm.append("User: ");
+         qhm.append(pw->pw_name);
+         qhm.append(", Group: ");
+         qhm.append(grp->gr_name);
+         QMessageBox::information(this, "Owner Information", qhm, QMessageBox::Ok, QMessageBox::Ok);
+      }
+      */
       #endif
    }
 }
@@ -992,7 +1012,6 @@ void GemdDlg::SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, c
     struct utimbuf fildt;
     time_t tim ;
     struct tm tout;
-    QString qhm;
     #endif
 
     #ifdef WINDOWS
@@ -1019,14 +1038,55 @@ void GemdDlg::SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, c
     fildt.actime = tim;
     fildt.modtime = tim;
     if (utime(FileName, &fildt) != 0){
-       int i=errno;
-       qhm.setNum(i);
-       qhm.insert(0, "File set time error. (");
-       qhm.append(")");
-       QMessageBox::critical(this, FileName, qhm, QMessageBox::Ok, QMessageBox::Ok);
+       ShowErrorDialog("File set time error.", errno);
     }
     #endif
 }
+#ifndef WINDOWS
+void GemdDlg::SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName){
+
+   struct stat fstat;
+
+   if (stat(FileName, &fstat) == 0){
+      //debug
+      /*{
+         QString qhm;
+         struct passwd *pw = getpwuid(fstat.st_uid);
+         struct group *grp = getgrgid(fstat.st_gid);
+         qhm = FileName;
+         qhm.append(": User: ");
+         qhm.append(pw->pw_name);
+         qhm.append(", Group: ");
+         qhm.append(grp->gr_name);
+         QMessageBox::information(this, "Current owner Information", qhm, QMessageBox::Ok, QMessageBox::Ok);
+      }*/
+      if ((fstat.st_uid != _uid) || (fstat.st_gid != _gid)){
+         //debug
+         /*{
+            QString qhm;
+            struct passwd *pw = getpwuid(fstat.st_uid);
+            struct group *grp = getgrgid(fstat.st_gid);
+            qhm = "Change owner/group from:\n";
+            qhm.append("User: ");
+            qhm.append(pw->pw_name);
+            qhm.append(", Group: ");
+            qhm.append(grp->gr_name);
+            qhm.append("\nTo:\n");
+            pw = getpwuid(_uid);
+            grp = getgrgid(_gid);
+            qhm.append("User: ");
+            qhm.append(pw->pw_name);
+            qhm.append(", Group: ");
+            qhm.append(grp->gr_name);
+            QMessageBox::information(this, "Current Owner Information", qhm, QMessageBox::Ok, QMessageBox::Ok);
+         }*/
+         if (chown(FileName, _uid, _gid) != 0){
+            ShowErrorDialog("Setting file/dir owner/group failed.", errno);
+         }
+      }
+   } else { ShowErrorDialog("Getting file/dir status failed.", errno); }
+}
+#endif
 
 int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
 {
@@ -1050,11 +1110,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    PadTOStoLocal(name, localName);
    fhout = OpenFileX(localName, "wb");
    if (fhout == FILE_OPEN_FAILED) {
-      QString qhm;
-      qhm.setNum(GetLastError());
-      qhm.insert(0, "File open error. (");
-      qhm.append(")");
-      QMessageBox::critical(this, name, qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+      ShowErrorDialog("File open error.", LastIOError);
       ui->errti->setText("Error!");
 	  return 1;
    }
@@ -1083,6 +1139,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       #else
       CloseFileX(fhout);
       SetLocalFileDateTime(fdat, ftim, localName);
+      if (fileStatusValid){ SetLocalFileOwner(fileStatus.st_uid, fileStatus.st_gid, localName); }
       #endif
    } else { CloseFileX(fhout); }
    return rc;
@@ -1480,9 +1537,10 @@ int GemdDlg::MakeSubF(unsigned int Clun) // Create start cluster of subdirectory
 int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBuffer){
 
     unsigned long m,n;
-    char subdnam[13];
+    char subdnam[256];
     char dstr[60];
     unsigned int FileSector, EntryPos;
+    struct stat fparms ;
 
     strcpy(subdnam,(char*)FilePathName.toLatin1().data());
     char res = PadtoFATFileName(subdnam, dstr) ;
@@ -1542,6 +1600,8 @@ int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBu
        FileSector = PartHeadSectors+(credirClu[i]-2)*PartSectorsPerCluster ;
        res = WriteSectors( FileSector, PartSectorsPerCluster, trasb, false);
     }
+    stat(subdnam, &fparms );
+    SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? NULL : &fparms);
     return EntryPos;
 }
 

@@ -1,6 +1,9 @@
 #ifndef GEMDDLG_H
 #define GEMDDLG_H
 
+//#define FRANKS_DEBUG
+//#define WINDOWS
+
 #ifdef WINDOWS
  #include <time.h>
  #include <windows.h>
@@ -8,13 +11,12 @@
 #else
  #include <sys/time.h>
  #include <utime.h>
+ #include <pwd.h>
+ #include <grp.h>
 #endif
 #include <sys/stat.h>
 #include <QDialog>
 #include <QModelIndex>
-
-//#define FRANKS_DEBUG
-//#define WINDOWS
 
 namespace Ui {
 class GemdDlg;
@@ -30,6 +32,7 @@ public:
     void closeEvent (QCloseEvent *event);
 
     void loadroot(bool doList);
+    void ShowErrorDialog(const char* message, int number);
     void ShowPartitionUsage();
     void OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, bool doList);
     void subdirh(bool doList);
@@ -44,6 +47,7 @@ public:
     void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, HANDLE fHandle);
     #else
     void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* FileName);
+    void SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName);
     #endif
     void WriteCurrentDirBuf(void);
     void WriteFAT(void);
