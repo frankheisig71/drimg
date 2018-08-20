@@ -1,0 +1,61 @@
+Drive Imaging, file transfer & partition extract  V 0.92  PP 2006-7 & FH 2018
+
+20.08.2018
+Original code by Peter Putnik 2006-2007
+Ported to QT4/QT5 and new feature set by Frank Heisig 2018
+
+Please consider:
+----------------
+This tool is still under construction or at least under bug fixing. Make copies before 
+using it. Reading / writing imagens from / to SD cards is well tested and working, 
+nevertheless test it before using it. 
+Under Linux, reading and writing SD-cards needs root rights - just be careful. 
+
+New features (file transfer dialog):
+- sorted list view
+- navigation within list view
+- deleting files and directories
+- adding whole directories
+- preserve all file and directory modification dates (note: by adding or deleting
+  files on local disk copy, parent directory modification date will get lost)
+- correct handling of special ST-charset (e.g. ATARI symbol) on local copies
+- Linux: Changing owner and group of extracted files and directories to owner and 
+         group of destination folder.
+
+Removed features:
+- help button (maybe restored next)
+- about button (maybe restored next)
+- ZX FS handling
+
+Building under Linux:
+- install QT4/5
+- QT4/5 development files
+- install QT Creator with all depending packages
+- open DrImg.pro
+- build
+
+Building under Windows:
+- install QT4/5
+- QT4/5 development files
+- install QT Creator toolchain (http://doc.qt.io/qtcreator/creator-tool-chains.html)
+- open DrImg.pro
+- enable #define WINDOWS on top of gemddlg.h
+- build
+
+If you get binaries from someone who is maybe more experienced in building executables, 
+ask him for the QT-Version he was compiling against... 
+
+Using Linux binary:
+- install QT
+- use it
+
+Using Windows binary:
+- you just need (? = Version):
+   QtCore?.dll
+   QtGui?.dll
+   libwinpthread*.dll
+   libgcc_s_dw*.dll
+   libstdc++-6.dll
+   
+   They can all be found in the QT-binary folder, so you don't need to install 
+   Gigs of library stuff.

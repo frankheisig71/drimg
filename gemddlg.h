@@ -5,9 +5,15 @@
 //#define WINDOWS
 
 #ifdef WINDOWS
+// #undef WINVER
+// #undef _WIN32_WINNT
+// #define WINVER _WIN32_WINNT_VISTA //minimum requirement
+// #define _WIN32_WINNT _WIN32_WINNT_VISTA //minimum requirement
  #include <time.h>
  #include <windows.h>
  #include <sys/stat.h>
+ #include <fileextd.h>
+ #include <winbase.h>
 #else
  #include <sys/time.h>
  #include <utime.h>
@@ -41,12 +47,12 @@ public:
     void LoadSubDir(bool IsRoot, bool doList);
     int  ExtractFile(unsigned char* DirBuffer, int pos);
     void EraseFile(unsigned char* DirBuffer, int EntryPos);
-    void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams);
+    void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct tm* DateTime);
     void GetFATFileName(unsigned char* DirBuffer, int DirPos, char* NameBuffer);
     #ifdef WINDOWS
-    void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, HANDLE fHandle);
+    void SetLocalFileDateTime(tm DateTime, HANDLE fHandle);
     #else
-    void SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* FileName);
+    void SetLocalFileDateTime(tm DateTime, char* FileName);
     void SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName);
     #endif
     void WriteCurrentDirBuf(void);
@@ -54,7 +60,7 @@ public:
     void EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocalDir, bool EnterLocalDir, bool ReadOnly);
     int  MakeSubF(unsigned int Clun);
     bool EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* EntryPos, bool ChangeLocalDir, bool ReadOnly);
-    int  AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBuffer);
+    int  AddSingleDirToCurrentDir(QString FilePathName, QString FullPath, unsigned char* DirBuffer, bool SetLocalDateTime);
     bool AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer);
     bool AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer);
     unsigned long WriteSectors( int StartSector, int Count, unsigned char *Buffer, bool sync);
@@ -77,6 +83,8 @@ private slots:
 
     void on_quitP_clicked();
 
+    void on_saveFAT_clicked();
+
 private:
     Ui::GemdDlg *ui;
 
@@ -91,7 +99,6 @@ void FATlookUp(unsigned int StartCluster, unsigned int* NextCluster, unsigned in
 void FATfreeCluster(unsigned int Cluster);
 unsigned int GetFATFileLength(unsigned char* DirBuffer, int EntryPos);
 void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Length);
-void SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams);
 void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime);
 void SortFATNames(unsigned char* DirBuffer, unsigned int* UnSortList, unsigned int* SortList, unsigned int* SortIndex);
 

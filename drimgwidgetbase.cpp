@@ -381,7 +381,18 @@ drimgwidgetbase::drimgwidgetbase(QWidget *parent) :
     QWidget(parent),
     ui(new Ui::drimgwidgetbase)
 {
+    QPushButton* button;
+
     ui->setupUi(this);
+    #ifndef FRANKS_DEBUG
+    button = this->findChild<QPushButton *>("FileTrButton");
+    if (button != NULL) { button->setEnabled(false); }
+    #endif
+    button = this->findChild<QPushButton *>("readButton");
+    if (button != NULL) { button->setEnabled(false); }
+    button = this->findChild<QPushButton *>("writeButton");
+    if (button != NULL) { button->setEnabled(false); }
+
     #ifdef FRANKS_DEBUG
     on_openIfButton_clicked();
     #endif
@@ -645,6 +656,12 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
       }
     }
     ui->inf6Label->setText(" "); // Clear filename info
+    QPushButton* button = this->findChild<QPushButton *>("FileTrButton");
+    if (button != NULL) { button->setEnabled(true); }
+    button = this->findChild<QPushButton *>("readButton");
+    if (button != NULL) { button->setEnabled(true); }
+    button = this->findChild<QPushButton *>("writeButton");
+    if (button != NULL) { button->setEnabled(true); }
 }
 
 void drimgwidgetbase::on_FileTrButton_clicked()
@@ -1043,6 +1060,9 @@ void drimgwidgetbase::on_openIfButton_clicked()
 {
     unsigned char bufr[640];
     unsigned char bufsw[512];
+    bool sethdf256 = false;
+    bool sethdf512 = false;
+    bool noFSfound = false;
 
     if (act) { return; }
     #ifdef FRANKS_DEBUG
@@ -1124,77 +1144,78 @@ void drimgwidgetbase::on_openIfButton_clicked()
       //Check is 8-bit IDEDOS:
          if ((form>0) && ( bufr[8] == 1 )){
             ui->inf2Label->setText( "PLUSIDEDOS 256 byte sect");
-            goto sethdf256 ;
+            sethdf256 = true;
          }
          else {
             ui->inf2Label->setText( PLUSIIS);
-            goto sethdf512 ;
+            sethdf512 = true;
          }
       }
-      // Check for GemDos:
+      else {
+         // Check for GemDos:
 
-      if (  ((bufr[0x1c7] == 'G') && (bufr[0x1c8] == 'E') && (bufr[0x1c9] == 'M'))
-          ||((bufr[0x1c7] == 'X') && (bufr[0x1c8] == 'G') && (bufr[0x1c9] == 'M'))
-          ||((bufr[0x1c7] == 'B') && (bufr[0x1c8] == 'G') && (bufr[0x1c9] == 'M'))){
-         ui->inf2Label->setText("GemDos");
-         Filesys = 11 ;
-      }
-      // Check for GemDos by swapped H/L :
-      for (int n=0;n<512;n=n+2) { bufsw[n] = bufr[n+1];  bufsw[n+1] = bufr[n]; }
-      if (  ((bufsw[0x1c7] == 'G') && (bufsw[0x1c8] == 'E') && (bufsw[0x1c9] == 'M'))
-          ||((bufsw[0x1c7] == 'X') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))
-          ||((bufsw[0x1c7] == 'B') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))){
-         ui->inf2Label->setText("GemDos SW");
-         Filesys = 11;
-         Swf = 1;
-      }
-      // See is FAT16 partition:
-      if (bufr[21] == 0xF8) {
-         ui->inf2Label->setText("FAT16 part.");
-         Filesys = 13;
-         goto removh;
-      }
-      //See is DOS mbr:
-      if ((bufr[510+ofset] == 0x55) && (bufr[511+ofset] == 0xAA)){
-         ui->inf2Label->setText( "DOS mbr");
-         Filesys = 1 ;
-         goto removh ;
-      }
-      // Check for PP Charea doS
-      if (( bufr[0+ofset] == 0x41 )  && ( bufr[12+ofset] == 0x42 )  &&  ( bufr[24+ofset] == 0x43 ))  {  //ABC
-         strcpy(dstr, "Charea DoS 16-bit");
-         if (( bufr[ofset+448] == 'B' ) && ( bufr[ofset+450] == 'S' )) { strcat(dstr," BigSect."); }
-         ui->inf2Label->setText( dstr);
-         goto sethdf512 ;
-      }
-      if (( bufr[0+ofset] == 0x41 ) && ( bufr[6+ofset] == 0x42 )  && ( bufr[12+ofset] == 0x43 )) { //ABC
-         strcpy(dstr,"Charea DoS 8-bit");
-         if (( bufr[ofset+224] == 'B' ) && ( bufr[ofset+225] == 'S' )) { strcat(dstr," BigSect."); }
-         ui->inf2Label->setText( dstr);
-         goto sethdf256 ;
-      }
-      if ( form >0 ) {
-        if ( bufr[8] == 1 ){
-           goto sethdf256;
+         if (  ((bufr[0x1c7] == 'G') && (bufr[0x1c8] == 'E') && (bufr[0x1c9] == 'M'))
+             ||((bufr[0x1c7] == 'X') && (bufr[0x1c8] == 'G') && (bufr[0x1c9] == 'M'))
+             ||((bufr[0x1c7] == 'B') && (bufr[0x1c8] == 'G') && (bufr[0x1c9] == 'M'))){
+            ui->inf2Label->setText("GemDos");
+            Filesys = 11 ;
          }
-         else{
-            goto sethdf512;
+         // Check for GemDos by swapped H/L :
+         for (int n=0;n<512;n=n+2) { bufsw[n] = bufr[n+1];  bufsw[n+1] = bufr[n]; }
+         if (  ((bufsw[0x1c7] == 'G') && (bufsw[0x1c8] == 'E') && (bufsw[0x1c9] == 'M'))
+             ||((bufsw[0x1c7] == 'X') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))
+             ||((bufsw[0x1c7] == 'B') && (bufsw[0x1c8] == 'G') && (bufsw[0x1c9] == 'M'))){
+            ui->inf2Label->setText("GemDos SW");
+            Filesys = 11;
+            Swf = 1;
+         }
+         // See is FAT16 partition:
+         if (bufr[21] == 0xF8) {
+            ui->inf2Label->setText("FAT16 part.");
+            Filesys = 13;
+         }
+         //See is DOS mbr:
+         else if ((bufr[510+ofset] == 0x55) && (bufr[511+ofset] == 0xAA)){
+            ui->inf2Label->setText( "DOS mbr");
+            Filesys = 1 ;
+         }
+         // Check for PP Charea doS
+         else if (( bufr[0+ofset] == 0x41 )  && ( bufr[12+ofset] == 0x42 )  &&  ( bufr[24+ofset] == 0x43 ))  {  //ABC
+            strcpy(dstr, "Charea DoS 16-bit");
+            if (( bufr[ofset+448] == 'B' ) && ( bufr[ofset+450] == 'S' )) { strcat(dstr," BigSect."); }
+            ui->inf2Label->setText( dstr);
+            sethdf512 = true;
+         }
+         else if (( bufr[0+ofset] == 0x41 ) && ( bufr[6+ofset] == 0x42 )  && ( bufr[12+ofset] == 0x43 )) { //ABC
+            strcpy(dstr,"Charea DoS 8-bit");
+            if (( bufr[ofset+224] == 'B' ) && ( bufr[ofset+225] == 'S' )) { strcat(dstr," BigSect."); }
+            ui->inf2Label->setText( dstr);
+            sethdf256 = true;
+         }
+         else if ( form >0 ) {
+            if ( bufr[8] == 1 ){
+               sethdf256 = true;
+            }
+            else{
+               sethdf512 = true;
+            }
+         }
+         else {
+            noFSfound = true;
          }
       }
-      goto removh;
-
-sethdf256:
-      ui->h256RB->setChecked(1);
-      ui->hdfRB->setChecked(0);
-      goto removh ;
-
-sethdf512:
-      if ( form ) {
-         ui->h256RB->setChecked(0);
-         ui->hdfRB->setChecked(1);
+      if (sethdf256){
+         ui->h256RB->setChecked(1);
+         ui->hdfRB->setChecked(0);
       }
 
-removh:
+      if (sethdf512){
+         if ( form ) {
+            ui->h256RB->setChecked(0);
+            ui->hdfRB->setChecked(1);
+         }
+      }
+
       ui->listBox1->clearSelection();
       //  SendMessage(GetDlgItem(hDlgWnd, ListBox), LB_SETCURSEL, -1, 1) ; // remove highlight of drive selection
       qhm.setNum(SecCnt);
@@ -1202,6 +1223,10 @@ removh:
       ui->inf3Label->setText(qhm);
       //Print out loaded filename:
       ui->inf6Label->setText(fileName );
+      if (!noFSfound){
+        QPushButton* button = this->findChild<QPushButton *>("FileTrButton");
+        if (button != NULL) { button->setEnabled(true); }
+      }
    }
 }
 

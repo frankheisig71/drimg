@@ -26,7 +26,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>Drive Imaging, file transfer &amp; partition extract  V 0.91  PP 2006-7; FH 2018</string>
+   <string>Drive Imaging, file transfer &amp; partition extract  V 0.92  PP 2006-7 &amp; FH 2018</string>
   </property>
   <property name="windowIcon">
    <iconset resource="gemdlgimages.qrc">
@@ -192,25 +192,6 @@
     </property>
    </widget>
   </widget>
-  <widget class="QPushButton" name="initzButton">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="geometry">
-    <rect>
-     <x>480</x>
-     <y>310</y>
-     <width>121</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Init Z&amp;X FS</string>
-   </property>
-   <property name="shortcut">
-    <string>Alt+X</string>
-   </property>
-  </widget>
   <widget class="QPushButton" name="creimfButton">
    <property name="enabled">
     <bool>true</bool>
@@ -306,7 +287,7 @@
    <property name="geometry">
     <rect>
      <x>480</x>
-     <y>340</y>
+     <y>330</y>
      <width>121</width>
      <height>31</height>
     </rect>
@@ -328,14 +309,14 @@
   <widget class="QPushButton" name="refrButton">
    <property name="geometry">
     <rect>
-     <x>179</x>
+     <x>159</x>
      <y>220</y>
-     <width>81</width>
+     <width>101</width>
      <height>31</height>
     </rect>
    </property>
    <property name="text">
-    <string>Refresh</string>
+    <string>Show devices</string>
    </property>
    <property name="shortcut">
     <string/>
@@ -581,22 +562,6 @@
    </property>
    <property name="shortcut">
     <string>Alt+O</string>
-   </property>
-  </widget>
-  <widget class="QPushButton" name="helpButton">
-   <property name="geometry">
-    <rect>
-     <x>510</x>
-     <y>0</y>
-     <width>51</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Help</string>
-   </property>
-   <property name="shortcut">
-    <string/>
    </property>
   </widget>
   <widget class="QPushButton" name="FileTrButton">
@@ -1319,22 +1284,6 @@
     <string/>
    </property>
   </widget>
-  <widget class="QPushButton" name="aboutButton">
-   <property name="geometry">
-    <rect>
-     <x>340</x>
-     <y>0</y>
-     <width>60</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>About</string>
-   </property>
-   <property name="shortcut">
-    <string/>
-   </property>
-  </widget>
   <widget class="QFrame" name="frame">
    <property name="geometry">
     <rect>
@@ -1640,38 +1589,6 @@
    </hints>
   </connection>
   <connection>
-   <sender>initzButton</sender>
-   <signal>clicked()</signal>
-   <receiver>drimgwidgetbase</receiver>
-   <slot>initzButton_clicked()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>aboutButton</sender>
-   <signal>clicked()</signal>
-   <receiver>drimgwidgetbase</receiver>
-   <slot>aboutButton_clicked()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
    <sender>refrButton</sender>
    <signal>clicked()</signal>
    <receiver>drimgwidgetbase</receiver>
@@ -1724,22 +1641,6 @@
    <signal>clicked()</signal>
    <receiver>drimgwidgetbase</receiver>
    <slot>writeButton_clicked()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>20</x>
-     <y>20</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>helpButton</sender>
-   <signal>clicked()</signal>
-   <receiver>drimgwidgetbase</receiver>
-   <slot>helpButton_clicked()</slot>
    <hints>
     <hint type="sourcelabel">
      <x>20</x>

@@ -32,6 +32,9 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifdef WINDOWS
+#include <direct.h>
+#endif
 
 typedef unsigned long  ULONG;
 typedef unsigned int   UINT;
@@ -57,7 +60,6 @@ extern char segflag ;
 extern ULONG SecCnt ;
 extern ULONG OffFS;
 extern QString op, qhm;
-extern char dstr[60];
 extern UINT sectr ;
 extern ULONG cylc ;
 extern UINT heads ;
@@ -115,7 +117,7 @@ ULONG Gparsiz[24] ; // GemDos part sizes
 ULONG  dirflen ;
 int reculev, selcnt, selP, j, d, e ;
 unsigned int   oe, zz;
-unsigned int   dpos, fatTime, fatDate;
+unsigned int   fatTime, fatDate;
 long tosave;
 
 int           PartSubDirLevel;
@@ -124,6 +126,7 @@ unsigned int  PartReservedSectors ; // Used clusters, free clusters of partition
 unsigned int  PartSectorsPerFAT;
 unsigned int  PartRootDirSectors;
 unsigned int  PartSectorsPerCluster;
+unsigned int  PartClusterByteLength;
 unsigned int  PartHeadSectors;
 unsigned int  PartFirstRootDirSector;
 unsigned long PartTotalSectors;
@@ -146,13 +149,13 @@ QStringList   DirRawFilelist;
 unsigned int  pDirEntryPos[MAX_SUBDIR_DEPTH] ; // Position in parent dir, by recursive extraction
 unsigned int  credirClu[16] ; // Created DIR cluster spread store
 unsigned int  credirCnt;
-unsigned char dirbuf[512*100];
-unsigned char PartFATbuffer[132000] ;
+static unsigned char dirbuf[512*100];
+static unsigned char PartFATbuffer[132000] ;
 unsigned char trasb[65536] ;  // 128 sector
 char subnam[12][MAX_SUBDIR_DEPTH] ;
 char subdnam[13];
 char subpath[256];
-char DestDir[256];
+static char DestDir[256];
 char res ;
 bool timestCur=0;
 const unsigned long INVALID_VALUE = 0xFFFFFFFF;
@@ -221,6 +224,21 @@ void GemdDlg::OpenDialog()
    unsigned long m, n;
    unsigned char bufr[512];
    unsigned char buf2[512];
+   char buffer[64];
+
+   QPushButton* button = this->findChild<QPushButton *>("saveFAT");
+   if (button != NULL) { button->setVisible(false); }
+
+   button = this->findChild<QPushButton *>("AddFiles");
+   if (button != NULL) { button->setEnabled(false); }
+   button = this->findChild<QPushButton *>("opdirP");
+   if (button != NULL) { button->setEnabled(false); }
+   button = this->findChild<QPushButton *>("newfP");
+   if (button != NULL) { button->setEnabled(false); }
+   button = this->findChild<QPushButton *>("ExtractFiles");
+   if (button != NULL) { button->setEnabled(false); }
+   button = this->findChild<QPushButton *>("DeleteFiles");
+   if (button != NULL) { button->setEnabled(false); }
 
    DestDir[0] = '\0';
    // Open file or physical drive:
@@ -288,7 +306,7 @@ void GemdDlg::OpenDialog()
             // Position, absolute, in sectors
             epos = bufr[i+8]+bufr[i+9]*256 + bufr[i+10]*65536 +bufr[i+11]*16777216 ;
             do{
-               strcpy(dstr,"Ext. ");
+               strcpy(buffer,"Ext. ");
                SeekFileX64(fhdl, epos*512, 0);
                ReadFromFile(buf2, 1, 512, fhdl);
                // First entry must be regular partition
@@ -415,6 +433,7 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
    n = PartSectorSize>>9 ;
    PartRootDirSectors     = (buf2[17]/16 + 16*buf2[18])/n ;
    PartSectorsPerCluster  = buf2[13] ;
+   PartClusterByteLength  = PartSectorsPerCluster * PartSectorSize;
    PartReservedSectors    = buf2[14]+256*buf2[15] ;
    PartHeadSectors        = PartReservedSectors+PartSectorsPerFAT*2+PartRootDirSectors ;
    PartFirstRootDirSector = PartReservedSectors+PartSectorsPerFAT*2 ;
@@ -447,7 +466,18 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
          k=PartFATbuffer[m] ; PartFATbuffer[m]=PartFATbuffer[m+1];PartFATbuffer[m+1]=k;
       }
    }
-   loadroot(true) ;
+   loadroot(true);
+   QPushButton* button = this->findChild<QPushButton *>("AddFiles");
+   if (button != NULL) { button->setEnabled(true); }
+   button = this->findChild<QPushButton *>("opdirP");
+   if (button != NULL) { button->setEnabled(true); }
+   button = this->findChild<QPushButton *>("newfP");
+   if (button != NULL) { button->setEnabled(true); }
+   button = this->findChild<QPushButton *>("ExtractFiles");
+   if (button != NULL) { button->setEnabled(true); }
+   button = this->findChild<QPushButton *>("DeleteFiles");
+   if (button != NULL) { button->setEnabled(true); }
+
 }
 void GemdDlg::on_filesLB_clicked(const QModelIndex &index)
 {
@@ -474,7 +504,7 @@ void GemdDlg::on_filesLB_clicked(const QModelIndex &index)
     num.setNum(DateTime.tm_year + 1900);
     qhm.append(num);
     if (DateTime.tm_mon < 10){ qhm.append("/0"); } else { qhm.append("/"); }
-    num.setNum(DateTime.tm_mon);
+    num.setNum(DateTime.tm_mon + 1);
     qhm.append(num);
     if (DateTime.tm_mday < 10){ qhm.append("/0"); } else { qhm.append("/"); }
     num.setNum(DateTime.tm_mday);
@@ -613,7 +643,7 @@ void GemdDlg::LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer)
       // Store loaded cluster start sector numbers for further writes!!
       DirCurrentClustes[n] = FileSector ;
       res = ReadSectors(FileSector, PartSectorsPerCluster, dirbuf+CurrentBufOffs);
-      CurrentBufOffs = CurrentBufOffs+PartSectorsPerCluster*PartSectorSize ;
+      CurrentBufOffs = CurrentBufOffs+PartClusterByteLength ;
       n++;
       if ( NextCluster>0xFFF0 ){ break; }// For FAT 16
       *StartCluster = NextCluster ;
@@ -632,7 +662,7 @@ void GemdDlg::WriteCurrentDirBuf(void)
    else  {
       for (unsigned int i=0; i<DirCurrentClusterCnt; i++){
          WriteSectors( DirCurrentClustes[i], PartSectorsPerCluster, dirbuf+CurrentBufOffs, false);
-         CurrentBufOffs = CurrentBufOffs+PartSectorsPerCluster*PartSectorSize;
+         CurrentBufOffs = CurrentBufOffs+PartClusterByteLength;
       }
       //WriteSectors( 0, 0, NULL, true); //just sync
    }
@@ -653,9 +683,6 @@ int LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, QString* 
    GenerateFileName(DirBuffer, EntryPos, Name);
    return 0 ;
 }
-
-static const unsigned char TOSfield[19] = {6,7,14,15,16,17,18,19,20,21,22,23,24,27,28,29,30,31,0};
-static const unsigned char DOSfield[19] = {208,209,210,211,224,225,226,227,228,229,230,231,232,233,234,235,236,237,0};
 
 int PadtoFATFileName(char *Instr, char* Outstr)
 {
@@ -801,9 +828,9 @@ void GemdDlg::LoadSubDir(bool IsRoot, bool doList)
       if (DirEntryCnt >= DIR_ENTRIES_MAX_CNT) { break; }
    }
    for(i=DirEntryCnt;i<DIR_ENTRIES_MAX_CNT;i++){ DirEntryPos[i] = 0; }
-   SortFATNames(dirbuf, DirEntryPos, DirEntrySortPos, DirEntrySortIndex);
 
    if (doList){
+      SortFATNames(dirbuf, DirEntryPos, DirEntrySortPos, DirEntrySortIndex);
       ui->filesLB->clear();
       if (!IsRoot) ui->filesLB->addItem("..");
       for(i=0; i<DirEntryCnt; i++){
@@ -837,7 +864,6 @@ void GemdDlg::subdirh(bool doList)
 {
    int k;
 
-   dstr[11] = 0 ;
    DirParentStartCluster = DirCurrentStartCluster ; // Keep this value for SubDIR creation
    if ( PartSubDirLevel ) {
       int spafl, c = 0;
@@ -861,7 +887,7 @@ void GemdDlg::subdirh(bool doList)
       subpath[c]= 0;
       if (doList) {ui->dirLabel->setText(subpath);}
    }
-   else { if (doList) {ui->dirLabel->setText(dstr);} }
+   else { if (doList) {ui->dirLabel->setText("root");} }
    // Now load it to dirbuf
    LoadDirBuf(&DirCurrentStartCluster, dirbuf);
    LoadSubDir(false, doList);
@@ -902,29 +928,39 @@ void GemdDlg::FATDirUp(unsigned char* DirBuffer, char* NameBuffer, bool doList)
 }
 void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocalDir, bool EnterLocalDir, bool ReadOnly)
 {
-   int o;
    char DirName[13];
    char localName[256];
+   tm DateTime;
 
    pDirEntryPos[PartSubDirLevel] = EntryPos; //we need the position if we come back up
    GetFATFileName(DirBuffer, EntryPos, DirName);
+   GetFATFileDateTime(DirBuffer, EntryPos, &DateTime);
    if (!ReadOnly) { WriteCurrentDirBuf(); }
    OpenFATSubDir(DirBuffer, EntryPos, false);
    PadTOStoLocal(DirName, localName);
    if(MakeLocalDir){
-      unsigned short fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
-      unsigned short ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
       #ifdef WINDOWS
-      o = mkdir(localName);
+      if (_mkdir(localName) != 0){
+         ShowErrorDialog("Making local directory failed.", GetLastError());
+         return;
+      }
       #else
-      o = mkdir(localName,0777);
-      if (!timestCur) { SetLocalFileDateTime(fdat, ftim, DirName); }
+      if (mkdir(localName,0777) != 0){
+         ShowErrorDialog("Making local directory failed.", GetLastError());
+         return;
+      }
+      QString DirPath = QDir::currentPath();
+      DirPath.append("/");
+      DirPath.append(localName);
+      if (fileStatusValid){ SetLocalFileOwner(fileStatus.st_uid, fileStatus.st_gid, (char*)DirPath.toLatin1().data()); }
       #endif
    }
    if (EnterLocalDir) {
-      o = chdir(localName);
+      if (chdir(localName) != 0){
+         ShowErrorDialog("Open local directory failed.", GetLastError());
+         return;
+      }
    }
-   if(o) {/* something to do here */}
    ui->dirLabel->setText(DirName);
    QCoreApplication::processEvents();
 }
@@ -941,7 +977,10 @@ bool GemdDlg::EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned in
       QCoreApplication::processEvents();
    }
    if(ChangeLocalDir){
-      chdir("..");
+      if(chdir("..") != 0){
+         ShowErrorDialog("Open local directory failed.", GetLastError());
+         return false;
+      }
    }
    if (UpEntryPos != NULL) {
       *UpEntryPos = pDirEntryPos[PartSubDirLevel];
@@ -952,11 +991,15 @@ bool GemdDlg::EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned in
 
 void GemdDlg::on_setddP_clicked()
 {
+   #ifndef FRANKS_DEBUG
    fileName = QFileDialog::getExistingDirectory(this, tr("Select dest. dir:"), "", QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
    if( !fileName.isEmpty() )
+   #endif
    {
+      #ifndef FRANKS_DEBUG
       strcpy(DestDir, (char*)fileName.toLatin1().data());
       chdir(DestDir);
+      #endif
       #ifndef WINDOWS
       if (stat(DestDir, &fileStatus) != 0){
           ShowErrorDialog("Getting dir status failed.", errno);
@@ -1000,41 +1043,36 @@ void GemdDlg::on_timeCB_clicked()
 #ifdef WINDOWS
 //file time will locally be stored as UTC time and shown as Local time on local filesystem
 //
-void GemdDlg::SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, HANDLE fHandle)
+void GemdDlg::SetLocalFileDateTime(tm DateTime, HANDLE fHandle)
 #else
-void GemdDlg::SetLocalFileDateTime(unsigned short fdate, unsigned short ftime, char* FileName)
+void GemdDlg::SetLocalFileDateTime(tm DateTime, char* FileName)
 #endif
 {
     #ifdef WINDOWS
-    FILETIME  fildt;
+    FILETIME  fTime;
     SYSTEMTIME sysdt;
     #else
     struct utimbuf fildt;
     time_t tim ;
-    struct tm tout;
     #endif
 
     #ifdef WINDOWS
-    sysdt.wSecond  = (ftime & 0x1F) << 1;
-    sysdt.wMinute  = (ftime>>5) & 0x3F ;
-    sysdt.wHour    = (ftime>>11) & 0x1F ;
+    sysdt.wMilliseconds = 0;
+    sysdt.wSecond  = DateTime.tm_sec;
+    sysdt.wMinute  = DateTime.tm_min;
+    sysdt.wHour    = DateTime.tm_hour;
 
-    sysdt.wDay     = fdate & 0x1F ;
-    sysdt.wMonth   = ((fdate>>5) & 0x0F) - 1 ;
-    sysdt.wYear    = ((fdate>>9) & 0x7F) + 1980 ;
-    SystemTimeToFileTime(&sysdt, &fildt);
-    SetFileTime(fHandle, &fildt, &fildt, &fildt);
+    sysdt.wDay     = DateTime.tm_mday;
+    sysdt.wMonth   = DateTime.tm_mon + 1; //tm: 0..11, SYSTEMTIME: 1..12
+    sysdt.wYear    = DateTime.tm_year + 1900;
+
+    SystemTimeToFileTime(&sysdt, &fTime);
+    if (SetFileTime(fHandle, &fTime, &fTime, &fTime) == 0){
+       ShowErrorDialog("Setting file/dir date/time failed.", GetLastError());
+    }
     #else
-    tout.tm_sec  = (ftime & 0x1F) << 1;
-    tout.tm_min  = (ftime>>5) & 0x3F ;
-    tout.tm_hour = (ftime>>11) & 0x1F ;
-
-    tout.tm_mday  = fdate & 0x1F ;
-    tout.tm_mon   = ((fdate>>5) & 0x0F) - 1 ;
-    tout.tm_year  = ((fdate>>9) & 0x7F) + 80 ;
-    tout.tm_isdst = 0 ;
     //dirLabel->setText(asctime( &tout));
-    tim = mktime( &tout) ;
+    tim = mktime( &DateTime) ;
     fildt.actime = tim;
     fildt.modtime = tim;
     if (utime(FileName, &fildt) != 0){
@@ -1049,7 +1087,8 @@ void GemdDlg::SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName){
 
    if (stat(FileName, &fstat) == 0){
       //debug
-      /*{
+      /*
+      {
          QString qhm;
          struct passwd *pw = getpwuid(fstat.st_uid);
          struct group *grp = getgrgid(fstat.st_gid);
@@ -1059,10 +1098,12 @@ void GemdDlg::SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName){
          qhm.append(", Group: ");
          qhm.append(grp->gr_name);
          QMessageBox::information(this, "Current owner Information", qhm, QMessageBox::Ok, QMessageBox::Ok);
-      }*/
+      }
+      */
       if ((fstat.st_uid != _uid) || (fstat.st_gid != _gid)){
          //debug
-         /*{
+         /*
+         {
             QString qhm;
             struct passwd *pw = getpwuid(fstat.st_uid);
             struct group *grp = getgrgid(fstat.st_gid);
@@ -1079,7 +1120,8 @@ void GemdDlg::SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName){
             qhm.append(", Group: ");
             qhm.append(grp->gr_name);
             QMessageBox::information(this, "Current Owner Information", qhm, QMessageBox::Ok, QMessageBox::Ok);
-         }*/
+         }
+         */
          if (chown(FileName, _uid, _gid) != 0){
             ShowErrorDialog("Setting file/dir owner/group failed.", errno);
          }
@@ -1095,16 +1137,15 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    unsigned int StartCluster, NextCluster, FileSector;
    unsigned int FileLength, msapos = 0;
    unsigned char DataBuffer[0x10000];  // 128 sector
-   unsigned short fdat, ftim ;
    int RemainingBytes;
    char name[13], localName[256];
+   tm DateTime;
 
    //load file from drive/image:
    StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
    FileLength = 16777216*DirBuffer[EntryPos+31]+65536*DirBuffer[EntryPos+30]+256*DirBuffer[EntryPos+29]+DirBuffer[EntryPos+28] ;
    RemainingBytes = FileLength;
-   fdat = DirBuffer[EntryPos+24]+256*DirBuffer[EntryPos+25] ;
-   ftim = DirBuffer[EntryPos+22]+256*DirBuffer[EntryPos+23] ;
+   GetFATFileDateTime(DirBuffer, EntryPos, &DateTime);
    GetFATFileName(DirBuffer, EntryPos, name);
    // open save file:
    PadTOStoLocal(name, localName);
@@ -1114,17 +1155,17 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
       ui->errti->setText("Error!");
 	  return 1;
    }
-   long tosave = PartSectorSize*PartSectorsPerCluster ;
+   long tosave = PartClusterByteLength ;
    // get sector(s) to load and next cluster
    do {
       FATlookUp(StartCluster, &NextCluster, &FileSector);
       ReadSectors(FileSector, PartSectorsPerCluster, DataBuffer);
-      if ( RemainingBytes<(int)(PartSectorSize*PartSectorsPerCluster) ) { tosave = RemainingBytes; }
+      if ( RemainingBytes<(int)(PartClusterByteLength) ) { tosave = RemainingBytes; }
       ULONG written;
       if ((written = WriteToFile(DataBuffer, 1, tosave, fhout)) > 0) {
          msapos = msapos + written;
       }
-      RemainingBytes = RemainingBytes-PartSectorSize*PartSectorsPerCluster;
+      RemainingBytes = RemainingBytes-PartClusterByteLength;
       doloop = ( RemainingBytes >= 0 ) && ( NextCluster <= 0xfff0 );
       if (doloop) {StartCluster = NextCluster;}
    } while(doloop);
@@ -1134,11 +1175,11 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    }
    else if (!timestCur) {
       #ifdef WINDOWS
-      SetLocalFileDateTime(fdat, ftim, fhout);
+      SetLocalFileDateTime(DateTime, fhout);
       CloseFileX(fhout);
       #else
       CloseFileX(fhout);
-      SetLocalFileDateTime(fdat, ftim, localName);
+      SetLocalFileDateTime(DateTime, localName);
       if (fileStatusValid){ SetLocalFileOwner(fileStatus.st_uid, fileStatus.st_gid, localName); }
       #endif
    } else { CloseFileX(fhout); }
@@ -1221,44 +1262,45 @@ void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Lengt
    DirBuffer[EntryPos+31] = Length>>24;
 }
 
-void GemdDlg::SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct stat* FileParams)
+tm* CurrentDateTime(void)
+{
+
+    static tm DateTime;
+    time_t tim ;
+    #ifdef WINDOWS
+    tm * trc;
+    #endif
+
+    // current timestamp:
+    time(&tim);
+    #ifdef WINDOWS
+    trc = gmtime(&tim);
+    if (trc != NULL) {
+       memcpy(&DateTime, trc, sizeof(tm));
+    } else {
+       DateTime.tm_hour = 0;
+       DateTime.tm_min  = 0;
+       DateTime.tm_sec  = 0;
+       DateTime.tm_mday = 1;
+       DateTime.tm_mon  = 0;
+       DateTime.tm_year = 80;
+    }
+    #else
+    localtime_r(&tim, &DateTime);
+    #endif
+
+    return &DateTime;
+}
+
+void GemdDlg::SetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, struct tm* DateTime)
 {
    unsigned int n;
-   time_t tim ;
-   tm tout;
-   #ifdef WINDOWS
-   tm * trc;
-   #endif
 
-   time(&tim);
-   //struct tm tout;
-   #ifdef WINDOWS
-   if (FileParams == NULL) { trc = gmtime(&tim); }
-   else { trc = gmtime(&FileParams->st_mtime);}
-   if (trc != NULL) {
-       memcpy(&tout, trc, sizeof(tm));
-   } else {
-       char message[256];
-       char name[13];
-       GetFATFileName(DirBuffer, EntryPos, name);
-       sprintf(message, "File %s : Creation date faulty!", name);
-       QMessageBox::warning(this, "date / time error", message, QMessageBox::Ok);
-       tout.tm_sec = 0;
-       tout.tm_min = 0;
-       tout.tm_hour = 0;
-       tout.tm_mday = 1;
-       tout.tm_mon = 1;
-       tout.tm_year = 85;
-   }
-   #else
-   if (FileParams == NULL){ localtime_r( &tim, &tout); } // Current time for timestamp
-   else { localtime_r( &FileParams->st_mtime, &tout);} // Filetime for timestamp
-   #endif
-   n = (tout.tm_sec/2)|(tout.tm_min<<5)|(tout.tm_hour<<11) ;
+   n = (DateTime->tm_sec/2)|(DateTime->tm_min<<5)|(DateTime->tm_hour<<11) ;
    fatTime = n ;
    DirBuffer[EntryPos+22] = n;
    DirBuffer[EntryPos+23] = n>>8;
-   n = (tout.tm_mday)|((tout.tm_mon+1)<<5)|( (tout.tm_year-80)<<9) ;
+   n = (DateTime->tm_mday)|((DateTime->tm_mon+1)<<5)|( (DateTime->tm_year-80)<<9) ;
    fatDate = n;
    DirBuffer[EntryPos+24] = n;
    DirBuffer[EntryPos+25] = n>>8;
@@ -1271,6 +1313,7 @@ void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime)
    n = DirBuffer[EntryPos+22];
    n = n + (DirBuffer[EntryPos+23] << 8);
    fatTime = n ;
+
    DateTime->tm_hour =  n >> 11;
    DateTime->tm_min  = (n >> 5) & 0x003F;
    DateTime->tm_sec  = (n & 0x1F) << 1;
@@ -1279,8 +1322,9 @@ void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime)
    n = DirBuffer[EntryPos+24];
    n = n + (DirBuffer[EntryPos+25] << 8);
    fatDate = n;
-   DateTime->tm_year = (n >> 9) + 80;
-   DateTime->tm_mon  = ((n >> 5) & 0x000F) - 1;
+   DateTime->tm_year = (n >> 9) + 80; //GEMDOS: from 1980 UNIX/DOS/WINDOWS: from 1900
+   DateTime->tm_mon  = ((n >> 5) & 0x000F) - 1; //GEMDOS: 1..12 UNIX/DOS/WINDOWS: 0..11 !!
+   if (DateTime->tm_mon < 0) { DateTime->tm_mon = 0; }
    DateTime->tm_mday =  n & 0x001F;
    //n = (tout.tm_mday)|((tout.tm_mon+1)<<5)|( (tout.tm_year-80)<<9) ;
 
@@ -1360,7 +1404,9 @@ void GemdDlg::EraseFile(unsigned char* DirBuffer, int EntryPos)
 {
    unsigned int StartCluster, NextCluster, FileSector, FileLength, l;
    bool CheckFileLenght;
+   char EntryName[64];
 
+   GetFATFileName(DirBuffer, EntryPos, EntryName);
    if (DirBuffer[EntryPos] == 0) return;  // Skip empty
    if (DirBuffer[EntryPos] == 0xE5) return; // Skip deleted
    StartCluster = DirBuffer[EntryPos+26]+256*DirBuffer[EntryPos+27] ;
@@ -1369,12 +1415,15 @@ void GemdDlg::EraseFile(unsigned char* DirBuffer, int EntryPos)
    if (CheckFileLenght) { FileLength = GetFATFileLength(DirBuffer, EntryPos); }
    else { FileLength = 1; }
    l = 0;
-   do {
+   while((StartCluster <= 0xfff0) && (l < FileLength)) {
       FATlookUp(StartCluster, &NextCluster, &FileSector);
       FATfreeCluster(StartCluster);
       StartCluster = NextCluster;
-      if (CheckFileLenght) { l = l + PartSectorsPerCluster * PartSectorSize; }
-   } while((StartCluster <= 0xfff0) && (l < FileLength));
+      if (StartCluster == 0){
+          QMessageBox::critical(this, EntryName, "FAT error! Cluster chain ends with zero.", QMessageBox::Cancel, QMessageBox::Cancel);
+          break;
+      }
+   }
    DirBuffer[EntryPos] = 0xE5; // erase Dir entry
 }
 
@@ -1387,18 +1436,23 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
     //PartSubDirLevel
     LocalDirLevel = PathName.count(QLatin1Char('/'));
     #ifdef WINDOWS
-    //QT under Windows quotes dir seperators sometimes as '/' sometimes as '\'
+    //QT under Windows quotes dir separators sometimes as '/' sometimes as '\'
     //we have to take care for both, fortunately they they exclude each other
     //under Windows
     LocalDirLevel += PathName.count(QLatin1Char('\\'));
     #endif
     QFileInfo fi(PathName);
     QString fn = fi.fileName();
-    EntryPos = AddSingleDirToCurrentDir(fn, DirBuffer);
-    if (EntryPos == -1) {return false;}
-    EnterSubDir(DirBuffer, EntryPos, false, false, false);
-    CurLocalDirLevel = LocalDirLevel + 1;
+    if (chdir((char*)PathName.toLatin1().data()) != 0){
+        ShowErrorDialog("Open local directory failed.", GetLastError());
+        return false;
+    }
 
+    //EntryPos = AddSingleDirToCurrentDir(fn, PathName, DirBuffer, true);
+    //if (EntryPos == -1) {return false;}
+    //EnterSubDir(DirBuffer, EntryPos, false, false, false);
+
+    CurLocalDirLevel = LocalDirLevel + 1;
     QDirIterator it(PathName, QDir::NoFilter, QDirIterator::Subdirectories);
     while (it.hasNext()) {
        QString qhm = it.next();
@@ -1414,7 +1468,7 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
           CurLocalDirLevel--;
        }
        if (fi.isDir()){
-          EntryPos = AddSingleDirToCurrentDir(fi.fileName(), DirBuffer);
+          EntryPos = AddSingleDirToCurrentDir(fi.fileName(), qhm, DirBuffer, true);
           if (EntryPos == -1) {break;}
           EnterSubDir(DirBuffer, EntryPos, false, false, false);
           CurLocalDirLevel++;
@@ -1503,7 +1557,7 @@ int GemdDlg::MakeSubF(unsigned int Clun) // Create start cluster of subdirectory
    FileSector = PartHeadSectors+(Clun-2)*PartSectorsPerCluster ;
    // Create content:
    // First clear:
-   for (UINT i=0; i<(PartSectorSize*PartSectorsPerCluster); i++) trasb[i]=0 ;
+   for (UINT i=0; i<(PartClusterByteLength); i++) trasb[i]=0 ;
    trasb[0] = 0x2E ;
    for (UINT i =1; i<11;i++ ) trasb[i] = ' ' ;
    trasb[11] = 16 ; // SubDir flag
@@ -1526,36 +1580,43 @@ int GemdDlg::MakeSubF(unsigned int Clun) // Create start cluster of subdirectory
    // Write it to drive or image:
    UINT result = WriteSectors( FileSector, PartSectorsPerCluster, trasb, false);
    /*
-   if ( res != (PartSectorsPerCluster*512) )   {
+   if ( res != (PartClusterByteLength) )   {
       MessageBox(hDlgWnd, "Write error!", "Problem",
       MB_OK | MB_ICONSTOP);
    }
    */
-   if ( result != (PartSectorsPerCluster*512)) { return 0;}
+   if ( result != (PartClusterByteLength)) { return 0;}
    return 1;
 }
-int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBuffer){
+int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, QString FullPath, unsigned char* DirBuffer, bool SetLocalDateTime){
 
     unsigned long m,n;
     char subdnam[256];
-    char dstr[60];
+    char name[60];
     unsigned int FileSector, EntryPos;
+    tm dDateTime;
+    #ifdef WINDOWS
+    HANDLE DirH;
+    FILETIME tc, tlm, tla;
+    #else
     struct stat fparms ;
+    #endif
 
     strcpy(subdnam,(char*)FilePathName.toLatin1().data());
-    char res = PadtoFATFileName(subdnam, dstr) ;
+    int res = MakeFATFileName(FilePathName, name);
+    //char res = PadtoFATFileName(subdnam, name) ;
     if (!res) {
        QMessageBox::critical(this, tr("Invalid filename!"), tr("Must have dot before ext."), QMessageBox::Cancel, QMessageBox::Cancel);
        return -1;
     }
     // Testing
-    ui->exwht->setText(dstr);
+    ui->exwht->setText(name);
     // On free cluster at least needed
     if ( GetFreeClusters() < 1 ) {
       QMessageBox::critical(this, tr("Partition full!"), tr("No place"), QMessageBox::Cancel, QMessageBox::Cancel);
       return -1;
     }
-    res = CheckNameExistsInDir(dstr, DirBuffer) ;
+    res = CheckNameExistsInDir(name, DirBuffer) ;
     if (!res) {
        QMessageBox::critical(this, tr("Name exists!"), tr("Name already in Dir."), QMessageBox::Cancel, QMessageBox::Cancel);
        return -1;
@@ -1566,7 +1627,7 @@ int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBu
        return -1;
     }
     // Copy name at EntryPos, add timestamp and directory flag
-    for (n=0;n<11;n++) DirBuffer[EntryPos+n]=dstr[n];
+    for (n=0;n<11;n++) DirBuffer[EntryPos+n]=name[n];
     DirBuffer[EntryPos+11]=16; // DIR flag
     //Set start cluster #
     // Seek first free cluster
@@ -1593,15 +1654,44 @@ int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, unsigned char* DirBu
     // first cluster of:
     MakeSubF(credirClu[0]);
     // First clear:
-    for (UINT n=0;n<(PartSectorSize*PartSectorsPerCluster);n++){ trasb[n]=0; }
+    for (UINT n=0;n<(PartClusterByteLength);n++){ trasb[n]=0; }
     // clear following clusters of DIR:
     for (UINT i=1;i<credirCnt;i++) {
        // Calculate logical sector by cluster #
        FileSector = PartHeadSectors+(credirClu[i]-2)*PartSectorsPerCluster ;
        res = WriteSectors( FileSector, PartSectorsPerCluster, trasb, false);
     }
-    stat(subdnam, &fparms );
-    SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? NULL : &fparms);
+    if (SetLocalDateTime && (!timestCur)) {
+       #ifdef WINDOWS
+       DirH = CreateFileA((char*)FullPath.toLatin1().data(), GENERIC_READ,  FILE_SHARE_READ, NULL,
+                                 OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+       if (DirH != INVALID_HANDLE_VALUE) {
+          if (GetFileTime(DirH, &tc, &tlm, &tla)){
+             SYSTEMTIME sysdt;
+             FileTimeToSystemTime(&tlm, &sysdt);
+             dDateTime.tm_sec  = sysdt.wSecond;
+             dDateTime.tm_min  = sysdt.wMinute;
+             dDateTime.tm_hour = sysdt.wHour;
+             dDateTime.tm_mday = sysdt.wDay;
+             dDateTime.tm_mon  = sysdt.wMonth - 1;
+             dDateTime.tm_year = sysdt.wYear - 1900;
+
+          } else memcpy(&dDateTime, CurrentDateTime(), sizeof(tm));
+          CloseHandle(DirH);
+
+       } else {
+           ShowErrorDialog("Error open dir for getting modification time. ", GetLastError());
+           memcpy(&dDateTime, CurrentDateTime(), sizeof(tm));
+       }
+
+       #else
+       stat((char*)FullPath.toLatin1().data(), &fparms );
+       localtime_r( &fparms.st_mtime, &dDateTime);
+       #endif
+    } else {
+       memcpy(&dDateTime, CurrentDateTime(), sizeof(tm));
+    }
+    SetFATFileDateTime(DirBuffer, EntryPos, &dDateTime);
     return EntryPos;
 }
 
@@ -1613,8 +1703,10 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    char   LocalFileName[256];
    struct stat fparms ;
    unsigned int k, FileByteLength;
+   //unsigned int FileStartCluster;
    unsigned int n, FileClusterCount, EntryPos, FileSector, CurrentFileCluster, PreviousFileCluster;
    FILE *inFile;
+   tm   fDateTime;
 
    strcpy(LocalFileName, (char*)FilePathName.toLatin1().data());   // Filename with path?
    MakeFATFileName(FilePathName, FATFileName);
@@ -1624,7 +1716,10 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    // Open file and get it's length:
    // Ignore directories:
    stat( LocalFileName , &fparms );
-   if (S_IFDIR & fparms.st_mode ) { return(true); } //Frank !!!!!!!!!
+   if (S_IFDIR & fparms.st_mode ) {
+      QMessageBox::critical(this, LocalFileName, tr("Entered AddFile with directory entry!"), QMessageBox::Cancel, QMessageBox::Cancel);
+      return(true);
+   } //Frank !!!!!!!!!
    inFile = fopen(LocalFileName, "rb");
    if (inFile == NULL) {
       QMessageBox::critical(this, tr("File open error"), FilePathName, QMessageBox::Cancel, QMessageBox::Cancel);
@@ -1635,7 +1730,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    FileByteLength = ftell(inFile); //Filelength got
    fseek(inFile,0,SEEK_SET); // Back to filestart dude!
    // Get needed cluster count:
-   n = PartSectorsPerCluster*PartSectorSize;
+   n = PartClusterByteLength;
    FileClusterCount = FileByteLength/n ;
    if ( FileByteLength % n) FileClusterCount++ ;
    // Check is there enough space:
@@ -1662,63 +1757,103 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
        DirBuffer[EntryPos+n]=FATFileName[n];
    //Enter filelength in filerecord:
    SetFATFileLength(DirBuffer, EntryPos, FileByteLength);
-   SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? NULL : &fparms);
-   // Set start cluster #
-   // Seek first free cluster
-   CurrentFileCluster = SeekFirstFreeCluster(); //we have already checked - there are definitely enough free ones
-   n = CurrentFileCluster;
-   DirBuffer[EntryPos+26] = n;    //write 1st FileCluster to DirEntry
-   DirBuffer[EntryPos+27] = n>>8;
-   //Copy FileSectors in order:
-   if ( (FileByteLength)<(PartSectorsPerCluster*PartSectorSize) )  {
-      k = FileByteLength ;
-      // First clear:
-      for ( UINT n=0;n<(PartSectorSize*PartSectorsPerCluster);n++) trasb[n]=0 ; // clear trasb for have zeros after file end
-   }
-   else { k =  PartSectorsPerCluster*PartSectorSize; }
-   res=fread(trasb,1,k,inFile);
-   FileSector = PartHeadSectors+(CurrentFileCluster-2) * PartSectorsPerCluster;
-   WriteSectors(FileSector, PartSectorsPerCluster, trasb, false);
-
-   // if only 1 cluster mark it as last:
-   if (FileClusterCount==1) {
-      MarkCluster(CurrentFileCluster, LAST_CLUSTER);
+   localtime_r( &fparms.st_mtime, &fDateTime);
+   SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? CurrentDateTime() : &fDateTime);
+   //special case empty files:
+   if (FileClusterCount == 0){
+       DirBuffer[EntryPos+26] = (unsigned char)LAST_CLUSTER;    //write LAST_CLUSTER to DirEntry
+       DirBuffer[EntryPos+27] = (unsigned char)(LAST_CLUSTER >> 8);
+       //FileStartCluster = LAST_CLUSTER;
    }
    else {
-      unsigned int msapos = PartSectorsPerCluster*PartSectorSize;
-      int o = 0 ; //flag
-      for (UINT n=1; n<FileClusterCount; n++)
-      {
-         if ( (FileByteLength-msapos)<(PartSectorsPerCluster*PartSectorSize) ) {
-            k = FileByteLength-msapos ;
-            for (UINT i=0;i<(PartSectorSize*PartSectorsPerCluster);i++) { trasb[i]=0; } // clear trasb for have zeros after file end
-            o = 1; // flag for last cluster
-         }
-         else { k = PartSectorsPerCluster*PartSectorSize; }
-         res=fread(trasb,1,k,inFile);
-         PreviousFileCluster = CurrentFileCluster;
-         if ((CurrentFileCluster = SeekNextFreeCluster(CurrentFileCluster)) == INVALID_VALUE)
+      // Set start cluster #
+      // Seek first free cluster
+      CurrentFileCluster = SeekFirstFreeCluster(); //we have already checked - there are definitely enough free ones
+      //FileStartCluster = CurrentFileCluster;
+      n = CurrentFileCluster;
+      DirBuffer[EntryPos+26] = n;    //write 1st FileCluster to DirEntry
+      DirBuffer[EntryPos+27] = n>>8;
+      //Copy FileSectors in order:
+      if ( (FileByteLength)<(PartClusterByteLength) )  {
+         k = FileByteLength ;
+         // First clear:
+         for ( UINT n=0;n<(PartClusterByteLength);n++) trasb[n]=0 ; // clear trasb for have zeros after file end
+      }
+      else { k =  PartClusterByteLength; }
+      res=fread(trasb,1,k,inFile);
+      FileSector = PartHeadSectors+(CurrentFileCluster-2) * PartSectorsPerCluster;
+      WriteSectors(FileSector, PartSectorsPerCluster, trasb, false);
+
+      // if only 1 cluster mark it as last:
+      if (FileClusterCount==1) {
+         MarkCluster(CurrentFileCluster, LAST_CLUSTER);
+      }
+      else {
+         unsigned int WrittenFileByteLength = PartClusterByteLength;
+         for (UINT n=1; n<FileClusterCount; n++)
          {
-             MarkCluster(PreviousFileCluster, LAST_CLUSTER) ; break ;
-         } // Error message?
-         // write into FAT
-         MarkCluster(PreviousFileCluster, CurrentFileCluster);
-         if ( o ) MarkCluster(CurrentFileCluster, LAST_CLUSTER) ;
-         //PreviousFileCluster = m;
-         FileSector = PartHeadSectors+(CurrentFileCluster - 2)*PartSectorsPerCluster ;
-         WriteSectors( FileSector, PartSectorsPerCluster, trasb, false);
-         msapos = msapos+PartSectorSize*PartSectorsPerCluster ;
+            if ( (FileByteLength-WrittenFileByteLength)<(PartClusterByteLength) ) {
+               k = FileByteLength-WrittenFileByteLength ;
+               for (UINT i=0;i<(PartClusterByteLength);i++) { trasb[i]=0; } // clear trasb for have zeros after file end
+            }
+            else { k = PartClusterByteLength; }
+            res=fread(trasb,1,k,inFile);
+            PreviousFileCluster = CurrentFileCluster;
+            if ((CurrentFileCluster = SeekNextFreeCluster(CurrentFileCluster)) == INVALID_VALUE)
+            {
+                MarkCluster(PreviousFileCluster, LAST_CLUSTER) ; break ;
+                QMessageBox::critical(this, tr("Directory full!"), tr("File not written completely! (Should not happen!)"), QMessageBox::Cancel, QMessageBox::Cancel);
+            }
+            // write into FAT
+            MarkCluster(PreviousFileCluster, CurrentFileCluster);
+            MarkCluster(CurrentFileCluster, LAST_CLUSTER) ;
+            //PreviousFileCluster = m;
+            FileSector = PartHeadSectors+(CurrentFileCluster - 2)*PartSectorsPerCluster ;
+            WriteSectors( FileSector, PartSectorsPerCluster, trasb, false);
+            WrittenFileByteLength = WrittenFileByteLength + PartClusterByteLength;
+         }
       }
    }
    fclose(inFile);
-   // Write parent DIR with new entry to drive/image:
+   //debug
+   /*
+   {
+      unsigned int sx, nx;
+      unsigned int flen = 0;
+      sx = FileStartCluster;
+      while (sx < 0xfff0){
+         flen++;
+         FATlookUp(sx, &nx, &FileSector);
+         sx = nx;
+      }
+      if(flen != FileClusterCount){
+          QString qhm = "File length differs from Cluster count. MaxCount: ";
+          QString num;
+          num.setNum(PartTotalDataClusters);
+          qhm.append(num);
+          qhm.append("\n Cluster length: ");
+          num.setNum(PartClusterByteLength);
+          qhm.append(num);
+          qhm.append("; file byte length: ");
+          num.setNum(FileByteLength);
+          qhm.append(num);
+          qhm.append("\nfile cluster count by file byte length: ");
+          num.setNum(FileClusterCount);
+          qhm.append(num);
+          qhm.append("\nfile cluster count on FAT:  ");
+          num.setNum(flen);
+          qhm.append(num);
+          QMessageBox::critical(this, LocalFileName, qhm, QMessageBox::Ok, QMessageBox::Ok);
+      }
+   }
+   */
    return(true);
 }
 
 void GemdDlg::on_opdirP_clicked()
 {
 
-   QString dir = QFileDialog::getExistingDirectory(this, tr("Select directory to write to device"), "",
+   QString dir = QFileDialog::getExistingDirectory(this, tr("Select directory whose content shall be written to device's current directory"), "",
                                                 QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
    if(!dir.isEmpty()){
        AddDirTreeToCurrentDir(dir, dirbuf);
@@ -1768,9 +1903,10 @@ void GemdDlg::on_opdirP_clicked()
 
 void GemdDlg::on_DeleteFiles_clicked()
 {
-   unsigned int CurrentDirEntryPos, button;
+   unsigned int CurrentDirEntryPos, MainEntryDirPos, button;
    int  DirLevel, listOffset, FileRemainsLevel;
    char message[256];
+   char name[32];
    bool Abort = false;
    bool YesToAll = false;
 
@@ -1792,33 +1928,36 @@ void GemdDlg::on_DeleteFiles_clicked()
       // see is item selected:
       if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
          //ui->filesLB->item(p+listOffset)->setSelected(false);
-         dpos = DirEntrySortPos[p];// Position in DIR
-         if (IsVolume(dirbuf, dpos)) { continue; }    //avoid VOL extraction
-         GetFATFileName(dirbuf, dpos, dstr);
+         MainEntryDirPos = DirEntrySortPos[p];// Position in DIR
+         //DirEntrySortPos will not be updated as long as the widget-list is not updated - but maybe a copy of it would be more save
+         if (IsVolume(dirbuf, MainEntryDirPos)) { continue; }    //avoid VOL extraction
+         GetFATFileName(dirbuf, MainEntryDirPos, name);
          // Recursive subdir extraction Open SubDir, show files, and extract
          // Need to store level, parent & pos in parent
-         if (IsSubDir(dirbuf, dpos)) {
+         if (IsSubDir(dirbuf, MainEntryDirPos)) {
             if (!YesToAll) {
-               sprintf(message, "Delete subdirectory %s including all files below?", dstr);
-               button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+               sprintf(message, "Delete subdirectory %s including all files below?", name);
+               button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
                if (button ==  QMessageBox::No){ continue; }//next entry
                if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
                YesToAll = (button ==  QMessageBox::YesToAll);
             }
             // Store pos in parent, here by selection number
-            EnterSubDir(dirbuf, dpos, false, false, false);
+            EnterSubDir(dirbuf, MainEntryDirPos, false, false, false);
             DirLevel++;
-            CurrentDirEntryPos = 64; // 1st 2 entries of sub dir are '.' and '..'
+            CurrentDirEntryPos = 0;
             do{
                bool intoNextSubDir = false;
                for (UINT n=CurrentDirEntryPos; n<PartSectorSize*DirCurrentLenght; n=n+32) {
                   if (IsEmpty(dirbuf, n)) { break; }
                   if (IsDeleted(dirbuf, n)) { continue; }
-                  GetFATFileName(dirbuf, n, dstr);
+                  GetFATFileName(dirbuf, n, name);
+                  if((name[0] == '.') && (name[1] == '\0')) continue;
+                  if((name[0] == '.') && (name[1] == '.') && (name[2] == '\0')) continue;
                   if (IsFile(dirbuf, n)) { //no subdir, it's a file
                      if (!YesToAll) {
-                        sprintf(message, "Delete file %s?", dstr);
-                        button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+                        sprintf(message, "Delete file %s?", name);
+                        button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
                         if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
                         if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
                         YesToAll = (button ==  QMessageBox::YesToAll);
@@ -1827,13 +1966,14 @@ void GemdDlg::on_DeleteFiles_clicked()
                   }else if (IsSubDir(dirbuf, n)) {
                      // its a subdir -> store pos in dir, leave n loop
                      if (!YesToAll) {
-                        sprintf(message, "Delete subdirectory %s including all files below?", dstr);
-                        button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+                        sprintf(message, "Delete subdirectory %s including all files below?", name);
+                        button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
                         if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
                         if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
                         YesToAll = (button ==  QMessageBox::YesToAll);
                      }
                      EnterSubDir(dirbuf, n, false, false, false);
+                     CurrentDirEntryPos = 0;
                      DirLevel++;
                      intoNextSubDir = true;
                      break;
@@ -1845,7 +1985,7 @@ void GemdDlg::on_DeleteFiles_clicked()
                   WriteCurrentDirBuf(); //rewrite Dir
                }
                //dir up
-               EnterUpDir(dirbuf, dstr, &CurrentDirEntryPos, true, true);
+               EnterUpDir(dirbuf, name, &CurrentDirEntryPos, true, true);
                DirLevel--;
                //do not delete dirs not empty
                if (FileRemainsLevel <= DirLevel) {
@@ -1864,13 +2004,13 @@ void GemdDlg::on_DeleteFiles_clicked()
          }
          if (Abort) { break; }
          if (!YesToAll) {
-            sprintf(message, "Delete file %s?", dstr);
-            button = QMessageBox::warning(this, dstr, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+            sprintf(message, "Delete file %s?", name);
+            button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
             if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
             if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
             YesToAll = (button ==  QMessageBox::YesToAll);
          }
-         EraseFile(dirbuf, dpos);
+         EraseFile(dirbuf, MainEntryDirPos);
       }
       if (Abort) { break; }
    }
@@ -1886,7 +2026,7 @@ void GemdDlg::on_DeleteFiles_clicked()
 
 void GemdDlg::on_ExtractFiles_clicked()
 {
-   unsigned int CurrentDirEntryPos;
+   unsigned int CurrentDirEntryPos, MainEntryDirPos;
    //int DirLevel;
    int listOffset;
    char name[64];
@@ -1898,6 +2038,7 @@ void GemdDlg::on_ExtractFiles_clicked()
    strcpy(DestDir, "/home/frank/Projekte/ATARI/DrImg/testoutput");
    #endif
    if (chdir(DestDir)) {}
+   on_setddP_clicked();
    #endif
    if(DestDir[0] == '\0'){
       on_setddP_clicked();
@@ -1914,11 +2055,12 @@ void GemdDlg::on_ExtractFiles_clicked()
       // see is item selected:
       if ( ui->filesLB->item(p+listOffset)->isSelected()) { // care for selected only
          //ui->filesLB->item(p+listOffset)->setSelected(false);
-         dpos = DirEntrySortPos[p];// Position in DIR
-         if (IsVolume(dirbuf, dpos)) { continue; }  //avoid VOL extraction
+         MainEntryDirPos = DirEntrySortPos[p];// Position in DIR
+         //DirEntrySortPos will not be updated as long as the widget-list is not updated - but maybe a copy of it would be more save
+         if (IsVolume(dirbuf, MainEntryDirPos)) { continue; }  //avoid VOL extraction
          // Recursive subdir extraction Open SubDir, show files, and extract
-         if (IsSubDir(dirbuf, dpos)) {
-            EnterSubDir(dirbuf, dpos, true, true, true);
+         if (IsSubDir(dirbuf, MainEntryDirPos)) {
+            EnterSubDir(dirbuf, MainEntryDirPos, true, true, true);
             DirLevel++;
             CurrentDirEntryPos = 0; // 1st 2 entries of sub dir are '.' and '..'
             do{
@@ -1942,7 +2084,24 @@ void GemdDlg::on_ExtractFiles_clicked()
                }  //n loop end
                if(intoNextSubDir){ intoNextSubDir = false; continue; }
                //we are though, dir up
+               QString DirPath = QDir::currentPath();
                EnterUpDir(dirbuf, name, &CurrentDirEntryPos, true, false);
+               if (!timestCur){
+                   tm DateTime;
+                   GetFATFileDateTime(dirbuf, CurrentDirEntryPos, &DateTime);
+                  #ifdef WINDOWS
+                   HANDLE DirH = CreateFileA((char*)DirPath.toLatin1().data(), GENERIC_READ | GENERIC_WRITE,  FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                             NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+                   if (DirH != INVALID_HANDLE_VALUE) {
+                      SetLocalFileDateTime(DateTime, DirH);
+                      CloseHandle(DirH);
+                   } else {
+                       ShowErrorDialog("Error open dir for time modification. ", GetLastError());
+                   }
+                   #else
+                   SetLocalFileDateTime(DateTime, (char*)DirPath.toLatin1().data());
+                   #endif
+               }
                DirLevel--;
                if (DirLevel == 0) { //we're on topmost level
                   break;
@@ -1953,7 +2112,7 @@ void GemdDlg::on_ExtractFiles_clicked()
             }while( PartSubDirLevel > 0);
             continue; //next main dir entry
          }
-         ExtractFile(dirbuf, dpos);
+         ExtractFile(dirbuf, MainEntryDirPos);
       } // if selected end
    }  // p loop end
    setCursor(QCursor(Qt::ArrowCursor));
@@ -1981,6 +2140,7 @@ void GemdDlg::on_AddFiles_clicked()
 
 void GemdDlg::on_newfP_clicked()
 {
+
    QString litet = ui->dirED->text();
    //GetDlgItemText(hDlgWnd, GemCreD , szText , (LPARAM) 64);
    if ( litet.length() == 0 ){
@@ -1996,10 +2156,8 @@ void GemdDlg::on_newfP_clicked()
       QMessageBox::critical(this, tr("Invalid filename!"), tr("All the spaces..."), QMessageBox::Cancel, QMessageBox::Cancel);
       return;
    }
-   int EntryPos = AddSingleDirToCurrentDir(litet, dirbuf);
-   // Add current timestamp:
-   SetFATFileDateTime(dirbuf, EntryPos, NULL);
-
+   int EntryPos = AddSingleDirToCurrentDir(litet, litet, dirbuf, false);
+   SetFATFileDateTime(dirbuf, EntryPos, CurrentDateTime());
    //Write Directory:
    WriteCurrentDirBuf();
    WriteFAT();
@@ -2024,4 +2182,21 @@ void GemdDlg::closeEvent (QCloseEvent *event)
    if (fhdl != FILE_OPEN_FAILED){
       CloseFileX(fhdl);
    }
+}
+//debug
+void GemdDlg::on_saveFAT_clicked()
+{
+   #ifdef FRANKS_DEBUG
+   #ifdef WINDOWS
+   HANDLE fo;
+   strcpy(DestDir, "D:\\Projekte\\tools\\build-DrImg\\testoutput");
+   #else
+   FILE *fout;
+   strcpy(DestDir, "/home/frank/Projekte/ATARI/DrImg/testoutput");
+   #endif
+   if (chdir(DestDir)) {}
+   fo = OpenFileX("FAT.bin", "wb");
+   WriteToFile(PartFATbuffer, 1, PartSectorsPerFAT*PartSectorSize, fo);
+   CloseFileX(fo);
+   #endif
 }
