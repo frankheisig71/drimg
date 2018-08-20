@@ -1223,10 +1223,10 @@ void drimgwidgetbase::on_openIfButton_clicked()
       ui->inf3Label->setText(qhm);
       //Print out loaded filename:
       ui->inf6Label->setText(fileName );
-      if (!noFSfound){
+      //if (!noFSfound){
         QPushButton* button = this->findChild<QPushButton *>("FileTrButton");
         if (button != NULL) { button->setEnabled(true); }
-      }
+      //}
    }
 }
 
