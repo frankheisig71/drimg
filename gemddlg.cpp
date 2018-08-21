@@ -226,19 +226,12 @@ void GemdDlg::OpenDialog()
    unsigned char buf2[512];
    char buffer[64];
 
-   QPushButton* button = this->findChild<QPushButton *>("saveFAT");
-   if (button != NULL) { button->setVisible(false); }
-
-   button = this->findChild<QPushButton *>("AddFiles");
-   if (button != NULL) { button->setEnabled(false); }
-   button = this->findChild<QPushButton *>("opdirP");
-   if (button != NULL) { button->setEnabled(false); }
-   button = this->findChild<QPushButton *>("newfP");
-   if (button != NULL) { button->setEnabled(false); }
-   button = this->findChild<QPushButton *>("ExtractFiles");
-   if (button != NULL) { button->setEnabled(false); }
-   button = this->findChild<QPushButton *>("DeleteFiles");
-   if (button != NULL) { button->setEnabled(false); }
+   ui->saveFAT->setVisible(false);
+   ui->AddFiles->setEnabled(false);
+   ui->opdirP->setEnabled(false);
+   ui->newfP->setEnabled(false);
+   ui->ExtractFiles->setEnabled(false);
+   ui->DeleteFiles->setEnabled(false);
 
    DestDir[0] = '\0';
    // Open file or physical drive:
@@ -467,17 +460,11 @@ void GemdDlg::on_partLB_clicked(const QModelIndex &index)
       }
    }
    loadroot(true);
-   QPushButton* button = this->findChild<QPushButton *>("AddFiles");
-   if (button != NULL) { button->setEnabled(true); }
-   button = this->findChild<QPushButton *>("opdirP");
-   if (button != NULL) { button->setEnabled(true); }
-   button = this->findChild<QPushButton *>("newfP");
-   if (button != NULL) { button->setEnabled(true); }
-   button = this->findChild<QPushButton *>("ExtractFiles");
-   if (button != NULL) { button->setEnabled(true); }
-   button = this->findChild<QPushButton *>("DeleteFiles");
-   if (button != NULL) { button->setEnabled(true); }
-
+   ui->AddFiles->setEnabled(true);
+   ui->opdirP->setEnabled(true);
+   ui->newfP->setEnabled(true);
+   ui->ExtractFiles->setEnabled(true);
+   ui->DeleteFiles->setEnabled(true);
 }
 void GemdDlg::on_filesLB_clicked(const QModelIndex &index)
 {
@@ -1476,7 +1463,7 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
           if (!AddFileToCurrentDir(qhm, DirBuffer)) { break; }
        }
     }
-    while (LocalDirLevel < CurLocalDirLevel){
+    while (CurLocalDirLevel > (LocalDirLevel + 1)){
        EnterUpDir(DirBuffer, NULL, NULL, false, false);
        CurLocalDirLevel--;
     }

@@ -381,18 +381,12 @@ drimgwidgetbase::drimgwidgetbase(QWidget *parent) :
     QWidget(parent),
     ui(new Ui::drimgwidgetbase)
 {
-    QPushButton* button;
-
     ui->setupUi(this);
     #ifndef FRANKS_DEBUG
-    button = this->findChild<QPushButton *>("FileTrButton");
-    if (button != NULL) { button->setEnabled(false); }
+    ui->FileTrButton->setEnabled(false);
     #endif
-    button = this->findChild<QPushButton *>("readButton");
-    if (button != NULL) { button->setEnabled(false); }
-    button = this->findChild<QPushButton *>("writeButton");
-    if (button != NULL) { button->setEnabled(false); }
-
+    ui->readButton->setEnabled(false);
+    ui->writeButton->setEnabled(false);
     #ifdef FRANKS_DEBUG
     on_openIfButton_clicked();
     #endif
@@ -656,12 +650,9 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
       }
     }
     ui->inf6Label->setText(" "); // Clear filename info
-    QPushButton* button = this->findChild<QPushButton *>("FileTrButton");
-    if (button != NULL) { button->setEnabled(true); }
-    button = this->findChild<QPushButton *>("readButton");
-    if (button != NULL) { button->setEnabled(true); }
-    button = this->findChild<QPushButton *>("writeButton");
-    if (button != NULL) { button->setEnabled(true); }
+    ui->FileTrButton->setEnabled(true);
+    ui->readButton->setEnabled(true);
+    ui->writeButton->setEnabled(true);
 }
 
 void drimgwidgetbase::on_FileTrButton_clicked()
@@ -1224,8 +1215,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
       //Print out loaded filename:
       ui->inf6Label->setText(fileName );
       //if (!noFSfound){
-        QPushButton* button = this->findChild<QPushButton *>("FileTrButton");
-        if (button != NULL) { button->setEnabled(true); }
+      ui->FileTrButton->setEnabled(true);
       //}
    }
 }
