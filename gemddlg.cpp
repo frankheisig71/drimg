@@ -1706,7 +1706,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    if (S_IFDIR & fparms.st_mode ) {
       QMessageBox::critical(this, LocalFileName, tr("Entered AddFile with directory entry!"), QMessageBox::Cancel, QMessageBox::Cancel);
       return(true);
-   } //Frank !!!!!!!!!
+   }
    inFile = fopen(LocalFileName, "rb");
    if (inFile == NULL) {
       QMessageBox::critical(this, tr("File open error"), FilePathName, QMessageBox::Cancel, QMessageBox::Cancel);
@@ -1744,7 +1744,14 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
        DirBuffer[EntryPos+n]=FATFileName[n];
    //Enter filelength in filerecord:
    SetFATFileLength(DirBuffer, EntryPos, FileByteLength);
+   #ifdef WINDOWS
+   {
+     tm* ptime = gmtime(&fparms.st_mtime);
+     memcpy(&fDateTime, (ptime != NULL) ? ptime : CurrentDateTime(), sizeof(tm));
+   }
+   #else
    localtime_r( &fparms.st_mtime, &fDateTime);
+   #endif
    SetFATFileDateTime(DirBuffer, EntryPos, (timestCur) ? CurrentDateTime() : &fDateTime);
    //special case empty files:
    if (FileClusterCount == 0){

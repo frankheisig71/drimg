@@ -421,9 +421,9 @@ int drimgwidgetbase::detSD()
 
    drisize = GetDeviceLength(devStr);
    if (drisize) {
-      if ((ov2ro == 0) || (drisize <= 0x100000000))
-      finp = OpenDevice(devStr,"wb"); // CD ROMs will not open
-      if (finp != FILE_OPEN_FAILED){
+      if ((ov2ro == 0) || (drisize <= 0x100000000)){
+      //finp = OpenDevice(devStr,"wb"); // CD ROMs will not open
+      //if (finp != FILE_OPEN_FAILED){
          exdl[detCount] = drisize/512; // Sector count
          rc = 1;
          qhm.setNum((double)drisize/1048576);
@@ -445,7 +445,7 @@ int drimgwidgetbase::detSD()
 void drimgwidgetbase::detSDloop()
 {
    #ifdef WINDOWS
-   char devStr1[7] = "\\\\.\\E:";
+   char devStr1[7] = "\\\\.\\D:";
    #else
    char devStr1[9]  = "/dev/sda";
    char devStr2[13] = "/dev/mmcblk0";
@@ -454,10 +454,10 @@ void drimgwidgetbase::detSDloop()
    ui->listBox1->clear();
    detCount = 0;
    act      = 1;
-   for (int n=0;n<26;n++)
+   for (int n=0;n<23;n++)
    {
       #ifdef WINDOWS
-      devStr1[4] = 'E'+n; //we're not checking A: to D:
+      devStr1[4] = 'D'+n; //we're not checking A: to C:
       strcpy(devStr,devStr1);
       #else
       if (n<9) { devStr1[5] = 's' ;
