@@ -1,0 +1,64 @@
+Drive Imaging, file transfer & partition extract  V 0.92  PP 2006-7 & FH 2018
+
+20.08.2018
+Original code by Peter Putnik 2006-2007
+Ported to QT4/QT5 and new feature set by Frank Heisig 2018
+
+Please consider:
+----------------
+This tool is still under construction or at least under bug fixing. Make copies before 
+using it. Reading / writing imagens from / to SD cards is well tested and working, 
+nevertheless test it before using it. 
+Under Linux, reading and writing SD-cards needs root privileges - just be careful. 
+
+New features (file transfer dialog):
+- sorted list view
+- navigation within list view
+- deleting files and directories
+- adding whole directories
+- preserve all file and directory modification dates (note: by adding or deleting
+  files on local disk copy, parent directory modification date will get lost)
+- correct handling of special ST-charset (e.g. ATARI symbol) on local copies
+- Linux: Changing owner and group of extracted files and directories to owner and 
+         group of destination folder.
+
+Removed features:
+- help button (maybe restored next)
+- about button (maybe restored next)
+- ZX FS handling
+
+Using Linux binary:
+- install QT
+- install drimg
+If you are using GNOME, LXDE, etc. instead KDE, you probably nee to to change 
+   /usr/share/applications/drimg.desktop
+change 
+   Exec=kdesudo ...
+to
+   Exec=gksudo ...
+
+
+Using Windows binary:
+- just use drimg.exe
+If you get something like: 
+"There is no disk in the drive. Please insert a disk into drive \Device\harddisk\Dr1"
+ask Microsoft - it's their fault. :-D 
+You may ignore this - just click continue or cancel - this is no problem. Solving it is
+a little bit tricky. Some details:
+This error should only occur if you (or Windows) at some point in the past mount a removable 
+disk to drive letter C - but in fact it's the same with drive letter D. Microsoft claims this 
+bug only for Windows XP, but in fact it's still even in WIN10. Microsofts system libraries 
+since VISTA just block this error. (Great bugfix, hmmm?) 
+This tool uses GNU libraries, which doesn't ignore this error, so you may encounter it, 
+if your Windows does not have a hard drive or a hard drive partition mounted on letter D. 
+Following these instructions:
+  https://support.microsoft.com/en-us/help/330137/there-is-no-disk-in-the-drive-please-insert-a-disk-into-drive-device-h
+you may remove the D: drive letter assignement with the Windows Disk Manager, but 
+unfortunately this is not all. You need to manually assign each possible medium slot to 
+another drive letter than D. 
+Just open the Drive Manager and plug a memory medium on each USD, SD, what ever - slot, 
+one after the other. You will see, when the drive row will fill with content - right click 
+and change the drive letter. Do not assign a letter twice, otherwise you will have to start 
+over.
+
+
