@@ -52,7 +52,8 @@ bool ov2ro = 1;
 
 QString fileName;
 #ifdef WINDOWS
-HANDLE physDevices[8] = {0,0,0,0,0,0,0,0};
+HANDLE physDevices[8] = {INVALID_HANDLE_VALUE,INVALID_HANDLE_VALUE,INVALID_HANDLE_VALUE,INVALID_HANDLE_VALUE,
+                         INVALID_HANDLE_VALUE,INVALID_HANDLE_VALUE,INVALID_HANDLE_VALUE,INVALID_HANDLE_VALUE};
 HANDLE finp, fout, flout;
 #define FILE_OPEN_FAILED INVALID_HANDLE_VALUE
 #else
@@ -60,7 +61,7 @@ FILE* physDevices[8] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
 FILE *finp, *fout, *flout;
 #define FILE_OPEN_FAILED NULL
 #endif
-long LastIOError = 0;
+unsigned long LastIOError = 0;
 long long filelen;
 
 
@@ -92,14 +93,19 @@ QString op, qhm;
 
 #ifdef WINDOWS
 
-void CloseFileX(HANDLE f){
+void CloseFileX(HANDLE *f){
+    SetLastError(ERROR_SUCCESS);
+    if (*f == INVALID_HANDLE_VALUE)
+    { return; }
     for(int i=0; i<8; i++){
-       if (physDevices[i] == f){
-          physDevices[i] = 0;
+       if (physDevices[i] == *f){
+          physDevices[i] = INVALID_HANDLE_VALUE;
           break;
        }
     }
-    CloseHandle(f);
+    CloseHandle(*f);
+    *f = INVALID_HANDLE_VALUE;
+    LastIOError = GetLastError();
 }
 
 HANDLE OpenFileX(const char* name, const char * mode)
@@ -108,6 +114,7 @@ HANDLE OpenFileX(const char* name, const char * mode)
    DWORD OpMode = 0;
    HANDLE fh;
 
+   SetLastError(ERROR_SUCCESS);
    if (strstr(mode, "r") != NULL) { CrMode = CrMode | GENERIC_READ; OpMode = OPEN_EXISTING; }
    if (strstr(mode, "w") != NULL) { CrMode = CrMode | GENERIC_WRITE; OpMode = OPEN_ALWAYS; }
    if (strstr(mode, "r+") != NULL) { CrMode = GENERIC_READ | GENERIC_WRITE; OpMode = OPEN_EXISTING; }
@@ -116,7 +123,7 @@ HANDLE OpenFileX(const char* name, const char * mode)
 
    fh = CreateFileA(name,
                     CrMode,
-                    0,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE, //0,
                     NULL,
                     OpMode,
                     FILE_ATTRIBUTE_NORMAL,
@@ -130,6 +137,7 @@ HANDLE OpenDevice(const char* name, const char * mode)
     DWORD CrMode = 0;
     HANDLE fh;
 
+    SetLastError(ERROR_SUCCESS);
     if (strstr(mode, "r") != NULL) { CrMode = CrMode | GENERIC_READ; }
     if (strstr(mode, "w") != NULL) { CrMode = CrMode | GENERIC_WRITE; }
     if (strstr(mode, "r+") != NULL) { CrMode = GENERIC_READ | GENERIC_WRITE; }
@@ -138,7 +146,7 @@ HANDLE OpenDevice(const char* name, const char * mode)
 
     fh = CreateFileA(name,
                      CrMode,
-                     0, //FILE_SHARE_READ | FILE_SHARE_WRITE,
+                     FILE_SHARE_READ | FILE_SHARE_WRITE, //0,
                      NULL,
                      OPEN_EXISTING,
                      FILE_FLAG_NO_BUFFERING,// | FILE_FLAG_WRITE_THROUGH,
@@ -157,6 +165,7 @@ HANDLE OpenDevice(const char* name, const char * mode)
 
 int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh){
    DWORD BytesRead = 0;
+   SetLastError(ERROR_SUCCESS);
    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
    ReadFile(fh, buffer, DataSize*DataCnt, &BytesRead, NULL);
    LastIOError = GetLastError();
@@ -164,6 +173,7 @@ int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE 
 }
 int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh){
     DWORD BytesWritten = 0;
+    SetLastError(ERROR_SUCCESS);
     if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     WriteFile(fh, buffer, DataSize*DataCnt, &BytesWritten, NULL);
     LastIOError = GetLastError();
@@ -171,6 +181,7 @@ int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE f
 }
 int PutCharFile(const int data, HANDLE fh){
    unsigned char b;
+   SetLastError(ERROR_SUCCESS);
    b = (unsigned char)data;
    if (1 == WriteToFile(&b, 1, 1, fh)) { LastIOError = GetLastError(); return b; }
    LastIOError = GetLastError();
@@ -183,12 +194,14 @@ long long GetDeviceLengthHandle(HANDLE fh)
     DISK_GEOMETRY_EX pdg;
     DWORD  junk;
 
+    SetLastError(ERROR_SUCCESS);
     BOOL bResult = DeviceIoControl(fh,
                               IOCTL_DISK_GET_DRIVE_GEOMETRY_EX,
                               NULL, 0,
                               &pdg, sizeof(pdg),
                               &junk,
                               (LPOVERLAPPED) NULL);
+    LastIOError = GetLastError();
     if (bResult) {
         return pdg.DiskSize.QuadPart;
     }
@@ -201,6 +214,7 @@ long long GetDeviceLength(const char* devName)
     long long devLen = 0;
 
 
+    SetLastError(ERROR_SUCCESS);
     fh = CreateFileA(devName,
                      0,
                      FILE_SHARE_READ | FILE_SHARE_WRITE,
@@ -209,6 +223,7 @@ long long GetDeviceLength(const char* devName)
                      0,
                      NULL);
 
+    LastIOError = GetLastError();
     if (fh != INVALID_HANDLE_VALUE){
         devLen = GetDeviceLengthHandle(fh);
         CloseHandle(fh);
@@ -221,6 +236,7 @@ long long GetFileLength64(HANDLE fh)
    DWORD hi, lo;
    LARGE_INTEGER len;
 
+   SetLastError(ERROR_SUCCESS);
    lo = GetFileSize(fh, &hi);
    if (lo != INVALID_FILE_SIZE){
       len.HighPart = hi;
@@ -260,26 +276,31 @@ long long SeekFileX64(HANDLE fh, long long offset, int origin){
 }
 
 #else
-void CloseFileX(FILE* f){
+void CloseFileX(FILE** f){
+   if (*f == NULL)
+   { return; }
+   errno = 0;
    for(int i=0; i<8; i++){
-      if (physDevices[i] == f){
+      if (physDevices[i] == *f){
          physDevices[i] = NULL;
          break;
       }
    }
-   fclose(f);
+   fclose(*f);
+   *f = NULL;
+   LastIOError = errno;
 }
 
 int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
-    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     errno = 0;
+    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     int read = fread(buffer,DataSize,DataCnt,fh);
     LastIOError = errno;
     return read / DataSize;
 }
 int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh){
-    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     errno = 0;
+    if((DataSize == 0) || (DataCnt == 0)) {return 0;}
     int written = fwrite(buffer,DataSize,DataCnt,fh);
     LastIOError = errno;
     return written / DataSize;
@@ -314,6 +335,7 @@ long long GetDeviceLength(const char* devName)
    long long devLen;
 
    drih = open(devName,  O_RDONLY | O_NONBLOCK) ;
+   LastIOError = errno;
    if (drih>0) {
       devLen = lseek64( drih, 0,  SEEK_END );
       close(drih);
@@ -355,20 +377,25 @@ long GetFileLength(FILE* fh)
 }
 
 int PutCharFile(const int data, FILE* fh){
+   errno = 0;
    int buf = fputc(data, fh);
    LastIOError = errno;
    return buf;
 }
 long SeekFileX(FILE* fh, int offset, int origin){
+    errno = 0;
     if (fseek(fh, offset, origin) == 0){
         return ftell(fh);
     }
+    LastIOError = errno;
     return -1;
 }
 long long SeekFileX64(FILE* fh, long long offset, int origin){
+   errno = 0;
    if (fseek(fh, offset, origin) == 0){
        return ftell(fh);
    }
+   LastIOError = errno;
    return -1;
 }
 int GetLastError(void){
@@ -429,13 +456,13 @@ int drimgwidgetbase::detSD()
          qhm.setNum((double)drisize/1048576);
          strcat(dstr, (char*)qhm.toLatin1().data());
          strcat(dstr," MB");
-         CloseFileX(finp);
+         //CloseFileX(&finp);
       }
    }
    else{
       e = GetLastError();
       if (e == EACCES) {
-         QMessageBox::critical(this, "Drive open error.", "Need to be root for accessing devices. Root?", QMessageBox::Cancel, QMessageBox::Cancel);
+         ShowErrorDialog(this, "Need to be root for accessing devices. Root?", GetLastError());
          act=0;
       }
    }
@@ -496,12 +523,16 @@ void drimgwidgetbase::detSDloop()
 
 void drimgwidgetbase::on_refrButton_clicked()
 {
-    detSDloop() ; // Detect SCSI (USB) drives attached
-/*
-    ui->listBox1->addItem(QString("--- item 1 ---"));
-    ui->listBox1->addItem(QString("--- item 2 ---"));
-    ui->listBox1->addItem(QString("--- item 3 ---"));
-*/
+   ui->listBox1->setEnabled(false);
+   ui->refrButton->setEnabled(false);
+   QCoreApplication::processEvents();
+   detSDloop() ; // Detect SCSI (USB) drives attached
+   ui->listBox1->setEnabled(true);
+   ui->refrButton->setEnabled(true);
+   ui->FileTrButton->setEnabled(false);
+   ui->readButton->setEnabled(false);
+   ui->writeButton->setEnabled(false);
+
 }
 
 
@@ -553,17 +584,14 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     ui->inf4Label->setText(physd); //testing!!!
     finp = OpenDevice(physd,"rb");
     if (finp == FILE_OPEN_FAILED) {
-      QMessageBox::critical(this, "Drive open error.", "Need to be root for accessing devices. Root?", QMessageBox::Cancel, QMessageBox::Cancel);
+      ShowErrorDialog(this, "Need to be root for accessing devices. Root?", LastIOError);
       act=0; return;
     }
 
     if(ReadFromFile(bufr,1,512,finp) < 512) {
-       QString qhm;
-       qhm.setNum(GetLastError());
-       qhm.insert(0, "Code: ");
-       QMessageBox::information(this, "read error", qhm ,QMessageBox::Cancel, QMessageBox::Cancel);
+       ShowErrorDialog(this, "File/device read error", LastIOError);
     }
-    CloseFileX(finp);
+    CloseFileX(&finp);
     OffFS = 0 ;
     ui->secofEdit->setText("0");
     // Detecting file(partition) system used:
@@ -662,7 +690,10 @@ void drimgwidgetbase::on_FileTrButton_clicked()
    getForm();
    getCHS();
    segflag = 0;
-   if ((Filesys == 11) || (Filesys == 13) || (Filesys == 1)) {
+   if (Filesys == 0){
+       QMessageBox::information(this, "No drive selected", "Please select a drive or open an image.",QMessageBox::Cancel, QMessageBox::Cancel);
+   }
+   else if ((Filesys == 11) || (Filesys == 13) || (Filesys == 1)) {
       gem = new GemdDlg(this);
       gem->exec();
    }
@@ -770,11 +801,7 @@ bool drimgwidgetbase::OpenSavingFile(FILE** f, bool hdf)
       QCoreApplication::processEvents();
       *f = OpenFileX((char*)fileName.toLatin1().data(),"wb");
       if (*f == FILE_OPEN_FAILED) {
-         QString qhm;
-         qhm.setNum(GetLastError());
-         qhm.insert(0, "Saving file open error. (");
-         qhm.append(")\nDamn!");
-         QMessageBox::critical(this, "File open error.", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+         ShowErrorDialog(this, "Saving file open error.", LastIOError);
          return false;
       } else {
          return true;
@@ -796,11 +823,7 @@ bool drimgwidgetbase::OpenReadingFile(FILE** f, bool hdf)
       QCoreApplication::processEvents();
       *f = OpenFileX((char*)fileName.toLatin1().data(),"rb");
       if (*f == FILE_OPEN_FAILED) {
-         QString qhm;
-         qhm.setNum(GetLastError());
-         qhm.insert(0, "Reading file open error. (");
-         qhm.append(")\nDamn!");
-         QMessageBox::critical(this, "File open error.", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+         ShowErrorDialog(this, "Reading file open error.", LastIOError);
          return false;
       } else {
          return true;
@@ -818,10 +841,10 @@ bool drimgwidgetbase::OpenInputFile(FILE** f, char* Name, bool IsDevice)
    else { *f = OpenFileX(Name,"rb"); }
    if (*f == FILE_OPEN_FAILED) {
       QString qhm;
-      qhm.setNum(GetLastError());
+      qhm.setNum(LastIOError);
       if (IsDevice) {qhm.insert(0, "Input drive open error. (");}
       else {qhm.insert(0, "Input file open error. (");}
-      qhm.append(")\nDamn!");
+      qhm.append(")");
       QString qhn;
       if (IsDevice) {qhn = "Device";} else {qhn = "File";};
       qhn.append(" open error.");
@@ -842,10 +865,10 @@ bool drimgwidgetbase::OpenOutputFile(FILE** f, char* Name, bool IsDevice)
    else { *f = OpenFileX(Name,"wb"); }
    if (*f == FILE_OPEN_FAILED) {
       QString qhm;
-      qhm.setNum(GetLastError());
+      qhm.setNum(LastIOError);
       if (IsDevice) {qhm.insert(0, "Output drive open error. (");}
       else {qhm.insert(0, "Output file open error. (");}
-      qhm.append(")\nDamn!");
+      qhm.append(")");
       QString qhn;
       if (IsDevice) {qhn = "Device";} else {qhn = "File";};
       qhn.append(" open error.");
@@ -945,6 +968,8 @@ void drimgwidgetbase::on_readButton_clicked()
 
    if (act) return;
    act = 1;
+   disableAll();
+
    //Set CHS according to Edit boxes first:
    getCHS();
    //Get OffSet and Sector count:
@@ -970,9 +995,9 @@ void drimgwidgetbase::on_readButton_clicked()
                copied = CopyImage(finp, fout, SecCnt, true, false, true, &WSec);
                //Print out info about data transfer:
                qhm = " sectors swapped L-H into file of ";
-               CloseFileX(finp);
+               CloseFileX(&finp);
             }
-            CloseFileX(fout);
+            CloseFileX(&fout);
          }
       }
       else {
@@ -1002,9 +1027,9 @@ void drimgwidgetbase::on_readButton_clicked()
                copied = CopyImage(finp, fout, SecCnt, false, false, true, &WSec);
                //Print out info about data transfer:
                qhm = " sectors copied from img file into file of ";
-               CloseFileX(finp);
+               CloseFileX(&finp);
             }
-            CloseFileX(fout);
+            CloseFileX(&fout);
          }
       }
    }
@@ -1031,9 +1056,9 @@ void drimgwidgetbase::on_readButton_clicked()
             SeekFileX(finp, OffFS*512, SEEK_SET);
             copied = CopyImage(finp, fout, SecCnt, Fsub, form == 2, true, &WSec);
             qhm = " sectors copied from device into file of ";
-            CloseFileX(finp);
+            CloseFileX(&finp);
          }
-         CloseFileX(fout);
+         CloseFileX(&fout);
       }
    }
    if (WSec == SecCnt) { ui->progressBar1->setValue(100);}
@@ -1044,6 +1069,7 @@ void drimgwidgetbase::on_readButton_clicked()
    qhm.append(num);
    qhm.append(" bytes.");
    ui->curopLabel->setText(qhm);
+   enableAll();
    act=0;
 }
 
@@ -1056,6 +1082,9 @@ void drimgwidgetbase::on_openIfButton_clicked()
     bool noFSfound = false;
 
     if (act) { return; }
+    ui->openIfButton->setEnabled(false);
+    QCoreApplication::processEvents();
+
     #ifdef FRANKS_DEBUG
     {
       #ifdef WINDOWS
@@ -1074,7 +1103,8 @@ void drimgwidgetbase::on_openIfButton_clicked()
       fout = OpenFileX((char*)fileName.toLatin1().data(),"rb");
     #endif
       if (fout == FILE_OPEN_FAILED) {
-          QMessageBox::critical(this, "File open error.", "File open error.\nDamn!",QMessageBox::Cancel, QMessageBox::Cancel);
+          ShowErrorDialog(this, "File open error.!", LastIOError);
+          ui->openIfButton->setEnabled(true);
           return;
       }
       //Load 512+128 bytes
@@ -1082,7 +1112,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
       if (ReadFromFile(bufr,1,640,fout)) {}
       // get filelen
       filelen = GetFileLength64(fout);
-      CloseFileX(fout);
+      CloseFileX(&fout);
       #ifdef FRANKS_DEBUG
       #ifdef WINDOWS
       strcpy(loadedF, "D:\\Projekte\\tools\\DrImg\\testimage.img");
@@ -1218,6 +1248,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
       ui->FileTrButton->setEnabled(true);
       //}
    }
+   ui->openIfButton->setEnabled(true);
 }
 
 void drimgwidgetbase::on_writeButton_clicked()
@@ -1227,6 +1258,7 @@ void drimgwidgetbase::on_writeButton_clicked()
 
    if (act) { return; }
    act = 1;
+   disableAll();
    getForm() ;
    if( OpenReadingFile(&finp,(form > 0)) )
    {
@@ -1239,7 +1271,7 @@ void drimgwidgetbase::on_writeButton_clicked()
       qhm.append("\nAre you sure?");
       // File to drive
       if (QMessageBox::question(this, "Writing", qhm, QMessageBox::Yes|QMessageBox::No, QMessageBox::No) == QMessageBox::No)
-      { act=0; return; }
+      { enableAll(); act=0; return; }
       if ( selected==99) {
          OpenOutputFile(&fout, loadedF, false);
       }
@@ -1247,6 +1279,7 @@ void drimgwidgetbase::on_writeButton_clicked()
          for (int k=0; k<9; k++) physd[k] = detDev[k][selected];
          if (( ov2ro ) && ( SecCnt>0x800000)) {
             QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
+            enableAll();
             act=0;
             return;
          }
@@ -1290,10 +1323,11 @@ void drimgwidgetbase::on_writeButton_clicked()
          else qhm.append(" sectors ) written to drive.");
          ui->curopLabel->setText(qhm);
          if (WSec == fsecc) { ui->progressBar1->setValue(100);}
-         CloseFileX(fout);
+         CloseFileX(&fout);
       }
-      CloseFileX(finp);
+      CloseFileX(&finp);
    }
+   enableAll();
    act = 0;
 }
 void drimgwidgetbase::on_abortButton_clicked()
@@ -1360,7 +1394,7 @@ void drimgwidgetbase::on_creimfButton_clicked()
          }
       }  // some check needed!
       //Close file:
-      CloseFileX(fout);
+      CloseFileX(&fout);
       setCursor(QCursor(Qt::ArrowCursor));
       for(int n = 0; n < 60; n++ ) dstr[n] = 0; //Clear string
        qhm.setNum(m);
@@ -1370,6 +1404,28 @@ void drimgwidgetbase::on_creimfButton_clicked()
    } // if filesel end
    act=0;
 }
+void drimgwidgetbase::disableAll()
+{
+    ui->openIfButton->setEnabled(false);
+    ui->creimfButton->setEnabled(false);
+    ui->FileTrButton->setEnabled(false);
+    ui->readButton->setEnabled(false);
+    ui->refrButton->setEnabled(false);
+    ui->writeButton->setEnabled(false);
+    ui->listBox1->setEnabled(false);
+    QCoreApplication::processEvents();
+}
+void drimgwidgetbase::enableAll()
+{
+    ui->openIfButton->setEnabled(true);
+    ui->creimfButton->setEnabled(true);
+    ui->FileTrButton->setEnabled(true);
+    ui->readButton->setEnabled(true);
+    ui->refrButton->setEnabled(true);
+    ui->writeButton->setEnabled(true);
+    ui->listBox1->setEnabled(true);
+}
+
 
 void drimgwidgetbase::on_ov2roCB_clicked()
 {

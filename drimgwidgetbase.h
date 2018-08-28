@@ -63,6 +63,9 @@ private slots:
 private:
     Ui::drimgwidgetbase *ui;
     GemdDlg* gem;
+    void disableAll();
+    void enableAll();
+
 };
 
 #endif // DRIMGWIDGETBASE_H

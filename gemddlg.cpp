@@ -73,7 +73,7 @@ extern QString litet;
 #ifdef WINDOWS
 extern HANDLE OpenFileX(const char* name, const char * mode);
 extern HANDLE OpenDevice(const char* name, const char * mode);
-extern void CloseFileX(HANDLE f);
+extern void CloseFileX(HANDLE* f);
 extern int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh);
 extern int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, HANDLE fh);
 extern int PutCharFile(const int data, HANDLE fh);
@@ -87,7 +87,7 @@ extern bool IsPhysDevice(HANDLE f);
 #else
 extern FILE* OpenDevice(const char* name, const char * mode);
 extern FILE* OpenFileX(const char* name, const char * mode);
-extern void CloseFileX(FILE* f);
+extern void CloseFileX(FILE** f);
 extern int ReadFromFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh);
 extern int WriteToFile(unsigned char* buffer, size_t DataSize, size_t DataCnt, FILE* fh);
 extern int PutCharFile(const int data, FILE* fh);
@@ -519,13 +519,13 @@ unsigned int GetFreeClusters(void)
    }
    return(i);
 }
-void GemdDlg::ShowErrorDialog(const char* message, int number){
+void ShowErrorDialog(QWidget* parent, const char* message, int number){
     QString qhm;
     qhm.setNum(number);
     qhm.insert(0, " (");
     qhm.insert(0, message);
     qhm.append(")");
-    QMessageBox::critical(this, "Error", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+    QMessageBox::critical(parent, "Error", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
 }
 
 
@@ -606,7 +606,7 @@ unsigned long GemdDlg::WriteSectors( int StartSector, int Count, unsigned char *
           failed = (written < Count*PartSectorSize);
        }
        if (failed) {
-          ShowErrorDialog("Drive/file write error.", LastIOError);
+          ShowErrorDialog(this, "Drive/file write error.", LastIOError);
        }
     }
     if(sync) {
@@ -928,12 +928,12 @@ void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocal
    if(MakeLocalDir){
       #ifdef WINDOWS
       if (_mkdir(localName) != 0){
-         ShowErrorDialog("Making local directory failed.", GetLastError());
+         ShowErrorDialog(this, "Making local directory failed.", GetLastError());
          return;
       }
       #else
       if (mkdir(localName,0777) != 0){
-         ShowErrorDialog("Making local directory failed.", GetLastError());
+         ShowErrorDialog(this, "Making local directory failed.", GetLastError());
          return;
       }
       QString DirPath = QDir::currentPath();
@@ -944,7 +944,7 @@ void GemdDlg::EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocal
    }
    if (EnterLocalDir) {
       if (chdir(localName) != 0){
-         ShowErrorDialog("Open local directory failed.", GetLastError());
+         ShowErrorDialog(this, "Open local directory failed.", GetLastError());
          return;
       }
    }
@@ -965,7 +965,7 @@ bool GemdDlg::EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned in
    }
    if(ChangeLocalDir){
       if(chdir("..") != 0){
-         ShowErrorDialog("Open local directory failed.", GetLastError());
+         ShowErrorDialog(this, "Open local directory failed.", GetLastError());
          return false;
       }
    }
@@ -989,7 +989,7 @@ void GemdDlg::on_setddP_clicked()
       #endif
       #ifndef WINDOWS
       if (stat(DestDir, &fileStatus) != 0){
-          ShowErrorDialog("Getting dir status failed.", errno);
+          ShowErrorDialog(this, "Getting dir status failed.", errno);
           fileStatusValid = false;
       } else { fileStatusValid = true; }
       //debug
@@ -1055,7 +1055,7 @@ void GemdDlg::SetLocalFileDateTime(tm DateTime, char* FileName)
 
     SystemTimeToFileTime(&sysdt, &fTime);
     if (SetFileTime(fHandle, &fTime, &fTime, &fTime) == 0){
-       ShowErrorDialog("Setting file/dir date/time failed.", GetLastError());
+       ShowErrorDialog(this, "Setting file/dir date/time failed.", GetLastError());
     }
     #else
     //dirLabel->setText(asctime( &tout));
@@ -1063,7 +1063,7 @@ void GemdDlg::SetLocalFileDateTime(tm DateTime, char* FileName)
     fildt.actime = tim;
     fildt.modtime = tim;
     if (utime(FileName, &fildt) != 0){
-       ShowErrorDialog("File set time error.", errno);
+       ShowErrorDialog(this, "File set time error.", errno);
     }
     #endif
 }
@@ -1110,10 +1110,10 @@ void GemdDlg::SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName){
          }
          */
          if (chown(FileName, _uid, _gid) != 0){
-            ShowErrorDialog("Setting file/dir owner/group failed.", errno);
+            ShowErrorDialog(this, "Setting file/dir owner/group failed.", errno);
          }
       }
-   } else { ShowErrorDialog("Getting file/dir status failed.", errno); }
+   } else { ShowErrorDialog(this, "Getting file/dir status failed.", errno); }
 }
 #endif
 
@@ -1138,7 +1138,7 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    PadTOStoLocal(name, localName);
    fhout = OpenFileX(localName, "wb");
    if (fhout == FILE_OPEN_FAILED) {
-      ShowErrorDialog("File open error.", LastIOError);
+      ShowErrorDialog(this, "File open error.", LastIOError);
       ui->errti->setText("Error!");
 	  return 1;
    }
@@ -1163,13 +1163,13 @@ int GemdDlg::ExtractFile(unsigned char* DirBuffer, int EntryPos)
    else if (!timestCur) {
       #ifdef WINDOWS
       SetLocalFileDateTime(DateTime, fhout);
-      CloseFileX(fhout);
+      CloseFileX(&fhout);
       #else
-      CloseFileX(fhout);
+      CloseFileX(&fhout);
       SetLocalFileDateTime(DateTime, localName);
       if (fileStatusValid){ SetLocalFileOwner(fileStatus.st_uid, fileStatus.st_gid, localName); }
       #endif
-   } else { CloseFileX(fhout); }
+   } else { CloseFileX(&fhout); }
    return rc;
 }
 
@@ -1431,7 +1431,7 @@ bool GemdDlg::AddDirTreeToCurrentDir(QString PathName, unsigned char* DirBuffer)
     QFileInfo fi(PathName);
     QString fn = fi.fileName();
     if (chdir((char*)PathName.toLatin1().data()) != 0){
-        ShowErrorDialog("Open local directory failed.", GetLastError());
+        ShowErrorDialog(this, "Open local directory failed.", GetLastError());
         return false;
     }
 
@@ -1667,7 +1667,7 @@ int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, QString FullPath, un
           CloseHandle(DirH);
 
        } else {
-           ShowErrorDialog("Error open dir for getting modification time. ", GetLastError());
+           ShowErrorDialog(this, "Error open dir for getting modification time. ", GetLastError());
            memcpy(&dDateTime, CurrentDateTime(), sizeof(tm));
        }
 
@@ -2090,7 +2090,7 @@ void GemdDlg::on_ExtractFiles_clicked()
                       SetLocalFileDateTime(DateTime, DirH);
                       CloseHandle(DirH);
                    } else {
-                       ShowErrorDialog("Error open dir for time modification. ", GetLastError());
+                      ShowErrorDialog(this, "Error open dir for time modification. ", GetLastError());
                    }
                    #else
                    SetLocalFileDateTime(DateTime, (char*)DirPath.toLatin1().data());
@@ -2174,7 +2174,7 @@ void GemdDlg::closeEvent (QCloseEvent *event)
 {
    if(event){}
    if (fhdl != FILE_OPEN_FAILED){
-      CloseFileX(fhdl);
+      CloseFileX(&fhdl);
    }
 }
 //debug
@@ -2191,6 +2191,6 @@ void GemdDlg::on_saveFAT_clicked()
    if (chdir(DestDir)) {}
    fo = OpenFileX("FAT.bin", "wb");
    WriteToFile(PartFATbuffer, 1, PartSectorsPerFAT*PartSectorSize, fo);
-   CloseFileX(fo);
+   CloseFileX(&fo);
    #endif
 }

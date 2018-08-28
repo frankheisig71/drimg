@@ -38,7 +38,6 @@ public:
     void closeEvent (QCloseEvent *event);
 
     void loadroot(bool doList);
-    void ShowErrorDialog(const char* message, int number);
     void ShowPartitionUsage();
     void OpenFATSubDir(unsigned char* DirBuffer, int EntryPos, bool doList);
     void subdirh(bool doList);
@@ -91,9 +90,6 @@ private:
     void OpenDialog();
 };
 
-int fileopen(const char* fname, const unsigned long flags);
-int fileclose(int fd);
-
 int  LoadEntryName(unsigned char* DirBuffer, int EntryPos, bool IsRoot, QString* Name);
 void FATlookUp(unsigned int StartCluster, unsigned int* NextCluster, unsigned int* FileSector);
 void FATfreeCluster(unsigned int Cluster);
@@ -101,5 +97,5 @@ unsigned int GetFATFileLength(unsigned char* DirBuffer, int EntryPos);
 void SetFATFileLength(unsigned char* DirBuffer, int EntryPos, unsigned int Length);
 void GetFATFileDateTime(unsigned char* DirBuffer, int EntryPos, tm* DateTime);
 void SortFATNames(unsigned char* DirBuffer, unsigned int* UnSortList, unsigned int* SortList, unsigned int* SortIndex);
-
+void ShowErrorDialog(QWidget* parent, const char* message, int number);
 #endif // GEMDDLG_H
