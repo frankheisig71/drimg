@@ -48,8 +48,8 @@ extern ULONG filelen, u ;
 extern ULONG ChaSecCnt ;
 
 extern int selected;
-extern char detDev[13][16] ;
-extern char physd[13];
+extern char detDev[MAX_DRIVE_COUNT][DRIVE_NAME_LENGHT];
+extern char physd[DRIVE_NAME_LENGHT];
 extern char loadedF[256] ;
 extern long LastIOError;
 extern int form;
@@ -236,7 +236,7 @@ void GemdDlg::OpenDialog()
    DestDir[0] = '\0';
    // Open file or physical drive:
    if (selected<16){
-      for (int k=0;k<9;k++) { physd[k] = detDev[k][selected]; }
+      strcpy(physd, detDev[selected]);
       if ((ov2ro)  && ( SecCnt>0x800000)) {
          fhdl = OpenDevice(physd, "rb" );
       }

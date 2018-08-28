@@ -34,12 +34,11 @@
 
 char act = 0;
 char abortf = 0;
-
-char devStr[13];
+char devStr[DRIVE_NAME_LENGHT];
 char dstr[60]; //for string operations
 int  detCount;
-char detDev[13][16] ;
-char physd[13];
+char detDev[MAX_DRIVE_COUNT][DRIVE_NAME_LENGHT];
+char physd[DRIVE_NAME_LENGHT];
 int  selected = 111; //set to non existing drive for begin
 int  form = 0; //Format 0-raw, 1-hdf, 2-hdf256
 int  Filesys = 0; // 0-unknown, 1-DOS, 2-PlusIDE, 3-PlusIDE 256 // 4-7 Charea ;  11-GemDos ; 13-FAT16 partition itself
@@ -414,6 +413,11 @@ drimgwidgetbase::drimgwidgetbase(QWidget *parent) :
     #endif
     ui->readButton->setEnabled(false);
     ui->writeButton->setEnabled(false);
+    #ifdef WINDOWS
+    ui->physDrive->setEnabled(true);
+    #else
+    ui->physDrive->setVisible(false);
+    #endif
     #ifdef FRANKS_DEBUG
     on_openIfButton_clicked();
     #endif
@@ -472,20 +476,29 @@ int drimgwidgetbase::detSD()
 void drimgwidgetbase::detSDloop()
 {
    #ifdef WINDOWS
-   char devStr1[7] = "\\\\.\\D:";
+   char devStr1[DRIVE_NAME_LENGHT];
+   if (ui->physDrive->isChecked()){
+      strcpy(devStr1,"\\\\.\\PhysicalDrive");
+   }else {
+      strcpy(devStr1,"\\\\.\\D:");
+   }
    #else
-   char devStr1[9]  = "/dev/sda";
-   char devStr2[13] = "/dev/mmcblk0";
+   char devStr1[DRIVE_NAME_LENGHT] = "/dev/sda";
+   char devStr2[DRIVE_NAME_LENGHT] = "/dev/mmcblk0";
    #endif
 
    ui->listBox1->clear();
    detCount = 0;
    act      = 1;
-   for (int n=0;n<23;n++)
+   for (int n=0;n<MAX_DRIVE_COUNT;n++)
    {
       #ifdef WINDOWS
-      devStr1[4] = 'D'+n; //we're not checking A: to C:
-      strcpy(devStr,devStr1);
+      if (ui->physDrive->isChecked()){
+         sprintf(devStr,"%s%i", devStr1, n+1);
+      } else {
+         devStr1[4] = 'D'+n; //we're not checking A: to C:
+         strcpy(devStr,devStr1);
+      }
       #else
       if (n<9) { devStr1[5] = 's' ;
          devStr1[7] = 'b'+n; //we're not checking /dev/sda
@@ -507,14 +520,8 @@ void drimgwidgetbase::detSDloop()
       if (act == 0) { break; }
 
       if (c) {
-      ui->listBox1->addItem(QString(dstr));
-      if (n<12){
-         for (int k=0;k<9;k++) detDev[k][detCount]=devStr[k]; // Store dev path
-            for (int k=9;k<13;k++) detDev[k][detCount]='\0';
-         }
-         else{
-            for (int k=0;k<13;k++) detDev[k][detCount]=devStr[k]; // Store dev path
-         }
+         ui->listBox1->addItem(QString(dstr));
+         strcpy(detDev[detCount], devStr);
          detCount++;
       }
    }
@@ -579,7 +586,7 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     //Get sector #0 and see filesystem on drive:
        // Clear buffer ahead:
     for (int n=0;n<512;n++) bufr[n] = 0 ;
-    for (int k=0;k<13;k++) physd[k] = detDev[k][selected];
+    strcpy(physd, detDev[selected]);
 
     ui->inf4Label->setText(physd); //testing!!!
     finp = OpenDevice(physd,"rb");
@@ -1036,7 +1043,7 @@ void drimgwidgetbase::on_readButton_clicked()
    // Here comes read from drives, medias...:
    else{
       if (OpenSavingFile(&fout, (form > 0))){
-         for (int k=0;k<13;k++){ physd[k] = detDev[k][selected]; }
+         strcpy(physd, detDev[selected]);
          ui->inf4Label->setText(physd); //testing!!!
          if (OpenInputFile(&finp, physd, true)) {
             ui->curopLabel->setText("Reading from drive...");
@@ -1267,6 +1274,8 @@ void drimgwidgetbase::on_writeButton_clicked()
       else {
          qhm.setNum(selected);
          qhm.insert(0, "Write to selected drive ");
+         qhm.append(": ");
+         qhm.append(detDev[selected]);
       }
       qhm.append("\nAre you sure?");
       // File to drive
@@ -1276,7 +1285,7 @@ void drimgwidgetbase::on_writeButton_clicked()
          OpenOutputFile(&fout, loadedF, false);
       }
       else{
-         for (int k=0; k<9; k++) physd[k] = detDev[k][selected];
+         strcpy(physd, detDev[selected]);
          if (( ov2ro ) && ( SecCnt>0x800000)) {
             QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
             enableAll();

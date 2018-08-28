@@ -24,6 +24,9 @@
 #include <QDialog>
 #include <QModelIndex>
 
+#define DRIVE_NAME_LENGHT 32
+#define MAX_DRIVE_COUNT 23
+
 namespace Ui {
 class GemdDlg;
 }
