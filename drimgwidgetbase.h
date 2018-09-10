@@ -29,7 +29,7 @@ public:
     void detSDloop();
     void getCHS();
     void getForm();
-    int  detSD();
+    int  detSD(char* devStr, int* extVolumese);
     #ifdef WINDOWS
     bool OpenSavingFile(HANDLE* f, bool hdf);
     bool OpenReadingFile(HANDLE* f, bool hdf);

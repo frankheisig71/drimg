@@ -34,7 +34,6 @@
 
 char act = 0;
 char abortf = 0;
-char devStr[DRIVE_NAME_LENGHT];
 char dstr[60]; //for string operations
 int  detCount;
 char detDev[MAX_DRIVE_COUNT][DRIVE_NAME_LENGHT];
@@ -413,11 +412,6 @@ drimgwidgetbase::drimgwidgetbase(QWidget *parent) :
     #endif
     ui->readButton->setEnabled(false);
     ui->writeButton->setEnabled(false);
-    #ifdef WINDOWS
-    ui->physDrive->setEnabled(true);
-    #else
-    ui->physDrive->setVisible(false);
-    #endif
     #ifdef FRANKS_DEBUG
     on_openIfButton_clicked();
     #endif
@@ -445,22 +439,53 @@ void drimgwidgetbase::getForm()
     if(ui->h256RB->isChecked()) form=2;
 }
 
-int drimgwidgetbase::detSD()
+int drimgwidgetbase::detSD(char* devStr, int* extVolumes)
 {
    int e, rc = 0;
    unsigned long long drisize;
+   #ifdef WINDOWS
+   typedef struct _M_VOLUME_DISK_EXTENTS {
+      DWORD       NumberOfDiskExtents;
+      DISK_EXTENT Extents[MAX_DRIVES_PER_VOLUME];
+   }M_VOLUME_DISK_EXTENTS;
+   #endif
 
    drisize = GetDeviceLength(devStr);
    if (drisize) {
-      if ((ov2ro == 0) || (drisize <= 0x100000000)){
-      //finp = OpenDevice(devStr,"wb"); // CD ROMs will not open
-      //if (finp != FILE_OPEN_FAILED){
-         exdl[detCount] = drisize/512; // Sector count
-         rc = 1;
-         qhm.setNum((double)drisize/1048576);
-         strcat(dstr, (char*)qhm.toLatin1().data());
-         strcat(dstr," MB");
-         //CloseFileX(&finp);
+      if (extVolumes != nullptr) {
+        #ifdef WINDOWS
+        M_VOLUME_DISK_EXTENTS diskExtends;
+        long unsigned int bytesWr;
+        HANDLE devH = OpenDevice(devStr, "r");
+        if (devH != FILE_OPEN_FAILED) {
+           if (DeviceIoControl(devH, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, &diskExtends, sizeof(M_VOLUME_DISK_EXTENTS), &bytesWr, nullptr))
+           {
+              for(unsigned int i=0; i<diskExtends.NumberOfDiskExtents; i++){
+                 extVolumes[i] = diskExtends.Extents[i].DiskNumber;
+              }
+              for(unsigned int i=diskExtends.NumberOfDiskExtents; i<MAX_DRIVES_PER_VOLUME; i++){
+                 extVolumes[i] = NO_PHYS_DRIVE;
+              }
+           } else {
+              extVolumes[0] = ERROR_CHECKING_PHYS_DRIVE;
+              LastIOError = GetLastError();
+           }
+           CloseFileX(&devH);
+           rc = 1;
+        }
+        #else
+           rc = 0;
+        #endif
+
+      } else {
+         if ((ov2ro == 0) || (drisize <= 0x100000000)){
+            QString qhm;
+            exdl[detCount] = drisize/512; // Sector count
+            rc = 1;
+            qhm.setNum((double)drisize/1048576);
+            strcat(dstr, (char*)qhm.toLatin1().data());
+            strcat(dstr," MB");
+         }
       }
    }
    else{
@@ -475,30 +500,36 @@ int drimgwidgetbase::detSD()
 
 void drimgwidgetbase::detSDloop()
 {
+   char devStr[DRIVE_NAME_LENGHT];
+   int Count = 0;
+
    #ifdef WINDOWS
-   char devStr1[DRIVE_NAME_LENGHT];
-   if (ui->physDrive->isChecked()){
-      strcpy(devStr1,"\\\\.\\PhysicalDrive");
-   }else {
-      strcpy(devStr1,"\\\\.\\D:");
-   }
+   char devListName[256];
+   int  logCount  = 0;
+   int  physCount = 0;
+   int  physDevList[MAX_DRIVE_COUNT];
+   int  pysDriveExtend[MAX_DRIVE_COUNT][MAX_DRIVES_PER_VOLUME];
+   char devLttr[MAX_DRIVE_COUNT];
+   char devStr1[DRIVE_NAME_LENGHT] = "\\\\.\\C:";
+   char devStr2[DRIVE_NAME_LENGHT] = "\\\\.\\PhysicalDrive";
+   //for(int i=0; i<MAX_DRIVE_COUNT; i++){
+   //   for(int j=0; j<MAX_DRIVES_PER_VOLUME; j++){
+   //      pysDriveExtend[i][j] = NO_PHYS_DRIVE; }}
    #else
    char devStr1[DRIVE_NAME_LENGHT] = "/dev/sda";
    char devStr2[DRIVE_NAME_LENGHT] = "/dev/mmcblk0";
    #endif
 
+   detCount  = 0;
+   act       = 1;
+
    ui->listBox1->clear();
-   detCount = 0;
-   act      = 1;
+
    for (int n=0;n<MAX_DRIVE_COUNT;n++)
    {
       #ifdef WINDOWS
-      if (ui->physDrive->isChecked()){
-         sprintf(devStr,"%s%i", devStr1, n+1);
-      } else {
-         devStr1[4] = 'D'+n; //we're not checking A: to C:
-         strcpy(devStr,devStr1);
-      }
+      devStr1[4] = 'C'+n; //Physcal Drive with "C:" will be sorted out later
+      strcpy(devStr,devStr1);
       #else
       if (n<9) { devStr1[5] = 's' ;
          devStr1[7] = 'b'+n; //we're not checking /dev/sda
@@ -509,21 +540,79 @@ void drimgwidgetbase::detSDloop()
          strcpy(devStr,devStr1);
       }
       else {
-         devStr2[11] = '0'+n-18; //but we're checking /dev/mmcblk0 to /dev/mmcblk7
+         devStr2[11] = '0'+n-18; //but we're checking /dev/mmcblk0 to /dev/mmcblk9
          strcpy(devStr,devStr2);
       }
       #endif
-      strcpy(dstr,devStr);
-      strcat(dstr,"  ");
 
-      int c = detSD();
-      if (act == 0) { break; }
+      #ifdef WINDOWS
+      int c = detSD(devStr, pysDriveExtend[logCount]);
+      #else
+      int c = detSD(devStr, nullptr);
+      #endif
 
       if (c) {
-         ui->listBox1->addItem(QString(dstr));
+         #ifdef WINDOWS
+         devLttr[logCount] = 'C' + n;
+         logCount++;
+         #else
+         strcpy(detDev[Count], devStr);
+         #endif
+         Count++;
+      }
+      if (act == 0) { break; }
+   }
+
+   #ifdef WINDOWS
+   //gather all physical drives
+   for(int i=0; i<MAX_DRIVE_COUNT; i++){ physDevList[i] = NO_PHYS_DRIVE; }
+   for(int i=0; i<Count; i++){
+      for(int j=0; j<MAX_DRIVES_PER_VOLUME; j++){
+         if(pysDriveExtend[i][j] != NO_PHYS_DRIVE){
+            int k = 0;
+            while (k < physCount){
+               if (physDevList[k] == pysDriveExtend[i][j]){ break; }
+               k++;
+            }
+            if(k == physCount){
+               physDevList[k] = pysDriveExtend[i][j];
+               physCount++;
+            }
+         }
+         else { break; }
+      }
+   }
+   Count = physCount;
+   #endif
+
+   for(int n=0; n<Count; n++){
+      #ifdef WINDOWS
+      sprintf(devStr,"%s%i", devStr2, physDevList[n]);
+      if (detSD(devStr, nullptr)){
          strcpy(detDev[detCount], devStr);
          detCount++;
-      }
+         sprintf(devListName, "Drive%i [", n);
+         //add all drive letters relatet to phys. count
+         for(int i=0; i<logCount; i++){
+            for(int j=0; j<MAX_DRIVES_PER_VOLUME; j++){
+               if(pysDriveExtend[i][j] == physDevList[n]){
+                  char buffer[256];
+                  sprintf(buffer, "%c:, ", devLttr[i]);
+                  strcat(devListName, buffer);
+               }
+               if(pysDriveExtend[i][j] == NO_PHYS_DRIVE){ break; }
+            }
+         }
+         int l = strlen(devListName);
+         devListName[l-2] = ']';
+         devListName[l-1] = '\0';
+      } else { continue; }
+      #else
+      strcpy(devListName ,detDev[n]);
+      detCount++;
+      #endif
+      ui->listBox1->addItem(QString(devListName));
+
    }
    act = 0;
 }

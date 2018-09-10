@@ -12,7 +12,7 @@
  #include <time.h>
  #include <windows.h>
  #include <sys/stat.h>
- //#include <fileextd.h>
+ #include <winioctl.h>
  #include <winbase.h>
 #else
  #include <sys/time.h>
@@ -25,7 +25,15 @@
 #include <QModelIndex>
 
 #define DRIVE_NAME_LENGHT 32
-#define MAX_DRIVE_COUNT 23
+
+#ifdef WINDOWS
+#define MAX_DRIVE_COUNT 4
+#define MAX_DRIVES_PER_VOLUME 128
+#define ERROR_CHECKING_PHYS_DRIVE -1
+#define NO_PHYS_DRIVE -1
+#else
+#define MAX_DRIVE_COUNT 26
+#endif
 
 namespace Ui {
 class GemdDlg;

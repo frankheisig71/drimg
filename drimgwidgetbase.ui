@@ -1110,7 +1110,7 @@
     <rect>
      <x>10</x>
      <y>250</y>
-     <width>201</width>
+     <width>251</width>
      <height>20</height>
     </rect>
    </property>
@@ -1566,22 +1566,6 @@
      <string>Alt+2</string>
     </property>
    </widget>
-  </widget>
-  <widget class="QCheckBox" name="physDrive">
-   <property name="enabled">
-    <bool>false</bool>
-   </property>
-   <property name="geometry">
-    <rect>
-     <x>150</x>
-     <y>250</y>
-     <width>111</width>
-     <height>20</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>phys. dev. access</string>
-   </property>
   </widget>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
