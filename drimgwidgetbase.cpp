@@ -501,10 +501,10 @@ int drimgwidgetbase::detSD(char* devStr, int* extVolumes)
 void drimgwidgetbase::detSDloop()
 {
    char devStr[DRIVE_NAME_LENGHT];
-   int Count = 0;
+   char devListName[256];
+   int  Count = 0;
 
    #ifdef WINDOWS
-   char devListName[256];
    int  logCount  = 0;
    int  physCount = 0;
    int  physDevList[MAX_DRIVE_COUNT];
