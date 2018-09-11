@@ -34,7 +34,6 @@
 
 char act = 0;
 char abortf = 0;
-char dstr[60]; //for string operations
 int  detCount;
 char detDev[MAX_DRIVE_COUNT][DRIVE_NAME_LENGHT];
 char physd[DRIVE_NAME_LENGHT];
@@ -152,7 +151,7 @@ HANDLE OpenDevice(const char* name, const char * mode)
     LastIOError = GetLastError();
     if (fh != INVALID_HANDLE_VALUE){
        for(int i=0; i<8; i++){
-          if (physDevices[i] == 0){
+          if (physDevices[i] == INVALID_HANDLE_VALUE){
              physDevices[i] = fh;
              break;
           }
@@ -439,24 +438,21 @@ void drimgwidgetbase::getForm()
     if(ui->h256RB->isChecked()) form=2;
 }
 
-int drimgwidgetbase::detSD(char* devStr, int* extVolumes)
+int drimgwidgetbase::detSD(char* devStr, char* volSizeMB, int* extVolumes)
 {
    int e, rc = 0;
    unsigned long long drisize;
    #ifdef WINDOWS
-   typedef struct _M_VOLUME_DISK_EXTENTS {
-      DWORD       NumberOfDiskExtents;
-      DISK_EXTENT Extents[MAX_DRIVES_PER_VOLUME];
-   }M_VOLUME_DISK_EXTENTS;
+   M_VOLUME_DISK_EXTENTS diskExtends;
+   long unsigned int bytesWr;
+   HANDLE devH;
    #endif
 
    drisize = GetDeviceLength(devStr);
    if (drisize) {
       if (extVolumes != nullptr) {
         #ifdef WINDOWS
-        M_VOLUME_DISK_EXTENTS diskExtends;
-        long unsigned int bytesWr;
-        HANDLE devH = OpenDevice(devStr, "r");
+        devH = OpenDevice(devStr, "r");
         if (devH != FILE_OPEN_FAILED) {
            if (DeviceIoControl(devH, IOCTL_VOLUME_GET_VOLUME_DISK_EXTENTS, nullptr, 0, &diskExtends, sizeof(M_VOLUME_DISK_EXTENTS), &bytesWr, nullptr))
            {
@@ -474,17 +470,18 @@ int drimgwidgetbase::detSD(char* devStr, int* extVolumes)
            rc = 1;
         }
         #else
-           rc = 0;
+        rc = 0;
         #endif
-
       } else {
          if ((ov2ro == 0) || (drisize <= 0x100000000)){
             QString qhm;
             exdl[detCount] = drisize/512; // Sector count
             rc = 1;
-            qhm.setNum((double)drisize/1048576);
-            strcat(dstr, (char*)qhm.toLatin1().data());
-            strcat(dstr," MB");
+            if (volSizeMB != nullptr){
+               qhm.setNum((double)drisize/1048576);
+               strcpy(volSizeMB, (char*)qhm.toLatin1().data());
+               strcat(volSizeMB," MB");
+            }
          }
       }
    }
@@ -501,14 +498,14 @@ int drimgwidgetbase::detSD(char* devStr, int* extVolumes)
 void drimgwidgetbase::detSDloop()
 {
    char devStr[DRIVE_NAME_LENGHT];
-   char devListName[256];
-   int  Count = 0;
-
+   char volSize[64] = "";
+   QString qhm;
    #ifdef WINDOWS
    int  logCount  = 0;
    int  physCount = 0;
    int  physDevList[MAX_DRIVE_COUNT];
    int  pysDriveExtend[MAX_DRIVE_COUNT][MAX_DRIVES_PER_VOLUME];
+   char devListName[128];
    char devLttr[MAX_DRIVE_COUNT];
    char devStr1[DRIVE_NAME_LENGHT] = "\\\\.\\C:";
    char devStr2[DRIVE_NAME_LENGHT] = "\\\\.\\PhysicalDrive";
@@ -524,6 +521,7 @@ void drimgwidgetbase::detSDloop()
    act       = 1;
 
    ui->listBox1->clear();
+   QCoreApplication::processEvents();
 
    for (int n=0;n<MAX_DRIVE_COUNT;n++)
    {
@@ -546,9 +544,12 @@ void drimgwidgetbase::detSDloop()
       #endif
 
       #ifdef WINDOWS
-      int c = detSD(devStr, pysDriveExtend[logCount]);
+      int c = detSD(devStr, nullptr, pysDriveExtend[logCount]);
+      if (pysDriveExtend[logCount][0] == ERROR_CHECKING_PHYS_DRIVE){
+         ShowErrorDialog(this, "DeviceIoControl error", LastIOError);
+      }
       #else
-      int c = detSD(devStr, nullptr);
+      int c = detSD(devStr, volSize, nullptr);
       #endif
 
       if (c) {
@@ -556,9 +557,13 @@ void drimgwidgetbase::detSDloop()
          devLttr[logCount] = 'C' + n;
          logCount++;
          #else
-         strcpy(detDev[Count], devStr);
+         strcpy(detDev[detCount], devStr);
+         qhm = detDev[detCount];
+         qhm += " ";
+         qhm += volSize;
+         ui->listBox1->addItem(qhm);
+         detCount++;
          #endif
-         Count++;
       }
       if (act == 0) { break; }
    }
@@ -566,7 +571,8 @@ void drimgwidgetbase::detSDloop()
    #ifdef WINDOWS
    //gather all physical drives
    for(int i=0; i<MAX_DRIVE_COUNT; i++){ physDevList[i] = NO_PHYS_DRIVE; }
-   for(int i=0; i<Count; i++){
+   for(int i=0; i<logCount; i++){
+      if (pysDriveExtend[i][0] == ERROR_CHECKING_PHYS_DRIVE){ continue; }
       for(int j=0; j<MAX_DRIVES_PER_VOLUME; j++){
          if(pysDriveExtend[i][j] != NO_PHYS_DRIVE){
             int k = 0;
@@ -582,13 +588,9 @@ void drimgwidgetbase::detSDloop()
          else { break; }
       }
    }
-   Count = physCount;
-   #endif
-
-   for(int n=0; n<Count; n++){
-      #ifdef WINDOWS
+   for(int n=0; n<physCount; n++){
       sprintf(devStr,"%s%i", devStr2, physDevList[n]);
-      if (detSD(devStr, nullptr)){
+      if (detSD(devStr, volSize, nullptr)){
          strcpy(detDev[detCount], devStr);
          detCount++;
          sprintf(devListName, "Drive%i [", n);
@@ -607,13 +609,17 @@ void drimgwidgetbase::detSDloop()
          devListName[l-2] = ']';
          devListName[l-1] = '\0';
       } else { continue; }
-      #else
-      strcpy(devListName ,detDev[n]);
-      detCount++;
-      #endif
-      ui->listBox1->addItem(QString(devListName));
-
+      qhm = devListName;
+      qhm += " ";
+      qhm += volSize;
+      ui->listBox1->addItem(qhm);
+      if (qhm.contains("C:")){
+         ui->listBox1->item(ui->listBox1->count()-1)->setTextColor(Qt::gray);
+         ui->listBox1->item(ui->listBox1->count()-1)->setFlags(ui->listBox1->item(ui->listBox1->count()-1)->flags() & (!(Qt::ItemIsSelectable | Qt::ItemIsEnabled)));
+      }
+      QCoreApplication::processEvents();
    }
+   #endif
    act = 0;
 }
 
@@ -642,12 +648,17 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
 {
     unsigned char bufr[512];
     unsigned char bufsw[512];
+             char str[128];
+    QString qhm;
 
     selected = index.row();
-
-    qhm.setNum(selected);
-    qhm.insert(0, "Drive: ");
-    ui->inf1Label->setText(qhm); //Info about selected drive - better write here /dev...
+    #ifdef WINDOWS
+    if ((ui->listBox1->item(selected)->flags() & Qt::ItemIsSelectable) != Qt::ItemIsSelectable)
+    {return;}
+    #endif
+    //qhm.setNum(selected);
+    //qhm.insert(0, "Drive: ");
+    ui->inf1Label->setText("Drive: "); //Info about selected drive - better write here /dev...
     ui->inf2Label->setText(" ");
 
     SecCnt = exdl[selected];
@@ -760,17 +771,17 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
       }
       // Check for PP Charea doS
       if ((bufr[0] == 0x41) && (bufr[12] == 0x42) && (bufr[24] == 0x43)){
-         strcpy(dstr,"Charea DoS");
+         strcpy(str,"Charea DoS");
          // Check is 8-bit simple IF drive/media:
          if ((bufr[0x1BC] == 'J') && (bufr[0x1BE] == 'R')){
-            strcat(dstr," 8-bit");
+            strcat(str," 8-bit");
             // Check Hdf256:
             ui->h256RB->setChecked(1);
             ui->hdfRB->setChecked(0);
             ui->rawRB->setChecked(0);
          }
-         if ((bufr[448] == 'B') && (bufr[450] == 'S')){ strcat(dstr, " BigSect."); }
-         ui->inf2Label->setText(dstr);
+         if ((bufr[448] == 'B') && (bufr[450] == 'S')){ strcat(str, " BigSect."); }
+         ui->inf2Label->setText(str);
       }
     }
     ui->inf6Label->setText(" "); // Clear filename info
@@ -1173,6 +1184,7 @@ void drimgwidgetbase::on_openIfButton_clicked()
 {
     unsigned char bufr[640];
     unsigned char bufsw[512];
+    char str[128];
     bool sethdf256 = false;
     bool sethdf512 = false;
     bool noFSfound = false;
@@ -1298,15 +1310,15 @@ void drimgwidgetbase::on_openIfButton_clicked()
          }
          // Check for PP Charea doS
          else if (( bufr[0+ofset] == 0x41 )  && ( bufr[12+ofset] == 0x42 )  &&  ( bufr[24+ofset] == 0x43 ))  {  //ABC
-            strcpy(dstr, "Charea DoS 16-bit");
-            if (( bufr[ofset+448] == 'B' ) && ( bufr[ofset+450] == 'S' )) { strcat(dstr," BigSect."); }
-            ui->inf2Label->setText( dstr);
+            strcpy(str, "Charea DoS 16-bit");
+            if (( bufr[ofset+448] == 'B' ) && ( bufr[ofset+450] == 'S' )) { strcat(str," BigSect."); }
+            ui->inf2Label->setText(str);
             sethdf512 = true;
          }
          else if (( bufr[0+ofset] == 0x41 ) && ( bufr[6+ofset] == 0x42 )  && ( bufr[12+ofset] == 0x43 )) { //ABC
-            strcpy(dstr,"Charea DoS 8-bit");
-            if (( bufr[ofset+224] == 'B' ) && ( bufr[ofset+225] == 'S' )) { strcat(dstr," BigSect."); }
-            ui->inf2Label->setText( dstr);
+            strcpy(str,"Charea DoS 8-bit");
+            if (( bufr[ofset+224] == 'B' ) && ( bufr[ofset+225] == 'S' )) { strcat(str," BigSect."); }
+            ui->inf2Label->setText(str);
             sethdf256 = true;
          }
          else if ( form >0 ) {
@@ -1494,11 +1506,10 @@ void drimgwidgetbase::on_creimfButton_clicked()
       //Close file:
       CloseFileX(&fout);
       setCursor(QCursor(Qt::ArrowCursor));
-      for(int n = 0; n < 60; n++ ) dstr[n] = 0; //Clear string
-       qhm.setNum(m);
-       qhm.insert(0, "Image file of ");
-       qhm.append(" bytes created.");
-       ui->curopLabel->setText(qhm);
+      qhm.setNum(m);
+      qhm.insert(0, "Image file of ");
+      qhm.append(" bytes created.");
+      ui->curopLabel->setText(qhm);
    } // if filesel end
    act=0;
 }
