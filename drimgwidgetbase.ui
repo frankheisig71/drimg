@@ -25,8 +25,13 @@
     <height>380</height>
    </size>
   </property>
+  <property name="font">
+   <font>
+    <family>DejaVu Sans</family>
+   </font>
+  </property>
   <property name="windowTitle">
-   <string>Drive Imaging, file transfer &amp; partition extract  PP 2006-7;  V 0.95  by FH 2018</string>
+   <string>Drive Imaging, file transfer &amp; partition extract  PP 2006-7;  V 0.96  by FH 2018</string>
   </property>
   <property name="windowIcon">
    <iconset resource="gemdlgimages.qrc">
@@ -40,6 +45,11 @@
      <width>110</width>
      <height>20</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>Detected drives:</string>
@@ -57,6 +67,11 @@
      <height>20</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>Sectors from start:</string>
    </property>
@@ -72,6 +87,11 @@
      <width>84</width>
      <height>20</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>Sector count:</string>
@@ -89,6 +109,11 @@
      <height>150</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="title">
     <string>Info</string>
    </property>
@@ -100,6 +125,11 @@
       <width>170</width>
       <height>20</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string/>
@@ -117,6 +147,11 @@
       <height>20</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="text">
      <string/>
     </property>
@@ -132,6 +167,11 @@
       <width>171</width>
       <height>20</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string/>
@@ -152,6 +192,11 @@
       <height>20</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="text">
      <string/>
     </property>
@@ -168,6 +213,11 @@
       <height>20</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="text">
      <string/>
     </property>
@@ -183,6 +233,11 @@
       <width>170</width>
       <height>20</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string/>
@@ -204,6 +259,11 @@
      <height>21</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>Create empt&amp;y img</string>
    </property>
@@ -222,6 +282,7 @@
    </property>
    <property name="font">
     <font>
+     <family>DejaVu Sans</family>
      <pointsize>12</pointsize>
      <weight>75</weight>
      <bold>true</bold>
@@ -243,6 +304,11 @@
      <height>21</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
   </widget>
   <widget class="QLineEdit" name="secofEdit">
    <property name="geometry">
@@ -252,6 +318,11 @@
      <width>131</width>
      <height>21</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
   </widget>
   <widget class="QProgressBar" name="progressBar1">
@@ -294,6 +365,7 @@
    </property>
    <property name="font">
     <font>
+     <family>DejaVu Sans</family>
      <pointsize>12</pointsize>
      <weight>75</weight>
      <bold>true</bold>
@@ -314,6 +386,11 @@
      <width>251</width>
      <height>31</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>Show devices</string>
@@ -557,6 +634,11 @@
      </disabled>
     </palette>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>&amp;Open Image File</string>
    </property>
@@ -798,6 +880,11 @@
       </colorrole>
      </disabled>
     </palette>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>File Tra&amp;nsfer</string>
@@ -1095,6 +1182,11 @@
      </disabled>
     </palette>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>Read fro&amp;m Drive</string>
    </property>
@@ -1113,6 +1205,11 @@
      <width>251</width>
      <height>20</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>don't show drives &gt; 4GB</string>
@@ -1332,6 +1429,11 @@
      </disabled>
     </palette>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>Write to Drive</string>
    </property>
@@ -1348,6 +1450,11 @@
      <height>181</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
   </widget>
   <widget class="QCheckBox" name="swapCB">
    <property name="geometry">
@@ -1357,6 +1464,11 @@
      <width>95</width>
      <height>30</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>Swap H/L</string>
@@ -1389,6 +1501,11 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="alignment">
      <set>Qt::AlignHCenter</set>
     </property>
@@ -1401,6 +1518,11 @@
       <width>60</width>
       <height>21</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="alignment">
      <set>Qt::AlignHCenter</set>
@@ -1415,6 +1537,11 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="alignment">
      <set>Qt::AlignHCenter</set>
     </property>
@@ -1427,6 +1554,11 @@
       <width>70</width>
       <height>20</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string>L&amp;BA</string>
@@ -1444,6 +1576,11 @@
       <height>21</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="text">
      <string>Si&amp;ze=CHS</string>
     </property>
@@ -1459,6 +1596,11 @@
       <width>63</width>
       <height>20</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string>Cylinders</string>
@@ -1476,6 +1618,11 @@
       <height>20</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="text">
      <string>Heads</string>
     </property>
@@ -1491,6 +1638,11 @@
       <width>81</width>
       <height>20</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string>Sector/track</string>
@@ -1524,6 +1676,11 @@
       <height>22</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
+    </property>
     <property name="text">
      <string>&amp;RAW</string>
     </property>
@@ -1543,6 +1700,11 @@
       <height>22</height>
      </rect>
     </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans Mono</family>
+     </font>
+    </property>
     <property name="text">
      <string>HDF</string>
     </property>
@@ -1558,6 +1720,11 @@
       <width>101</width>
       <height>22</height>
      </rect>
+    </property>
+    <property name="font">
+     <font>
+      <family>DejaVu Sans</family>
+     </font>
     </property>
     <property name="text">
      <string>HDF&amp;256</string>

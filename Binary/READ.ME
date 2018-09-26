@@ -43,6 +43,14 @@ to
 
 Using Windows binary:
 - just use drimg.exe
+
+If you need to erase a partition by command line shell:
+ - Hit 'Windows key' + 'R'
+ - type 'diskpart'
+ - type 'select disk n' where 'n' is the number of PhysicalDrive (see DrImg info panel; never type '0' here!)
+ - type clean
+ - type exit
+ 
 If you get something like: 
 "There is no disk in the drive. Please insert a disk into drive \Device\harddisk\Dr1"
 ask Microsoft - it's their fault. :-D 
@@ -64,4 +72,11 @@ one after the other. You will see, when the drive row will fill with content - r
 and change the drive letter. Do not assign a letter twice, otherwise you will have to start 
 over.
 
-
+If you have a drive showing another sector size than 512 bytes:
+This is another Microsoft story. For reading/writing to real devices, Windows needs to read/write from sector 
+aligned memory a sector aligned amout of bytes. The special thing is: The application needs to take care for
+that, not the device driver as one would expect! That (fu..... stupid) behavior has taken me several days 
+struggling with error 87. 
+However - the current code should work with all sector sizes, but in fact ist's only tested with 512 bytes
+sector size, caused by the lack of devices with bigger sector sizes. (Probably all drives with bigger sectors 
+are supporting 512 byte sector access too.)

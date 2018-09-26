@@ -25,6 +25,9 @@
 #include <QModelIndex>
 
 #define DRIVE_NAME_LENGHT 32
+#define MAX_PHYS_DEVICES  16
+#define MIN_SECTOR_SIZE   512
+
 
 #ifdef WINDOWS
 #define MAX_DRIVE_COUNT 24
@@ -37,6 +40,7 @@ typedef struct _M_VOLUME_DISK_EXTENTS {
 }M_VOLUME_DISK_EXTENTS;
 #else
 #define MAX_DRIVE_COUNT 26
+#define INVALID_SET_FILE_POINTER -1
 #endif
 
 namespace Ui {
@@ -69,8 +73,8 @@ public:
     void SetLocalFileDateTime(tm DateTime, char* FileName);
     void SetLocalFileOwner(uid_t _uid, uid_t _gid, char* FileName);
     #endif
-    void WriteCurrentDirBuf(void);
-    void WriteFAT(void);
+    bool WriteCurrentDirBuf(void);
+    bool WriteFAT(void);
     void EnterSubDir(unsigned char* DirBuffer, int EntryPos, bool MakeLocalDir, bool EnterLocalDir, bool ReadOnly);
     int  MakeSubF(unsigned int Clun);
     bool EnterUpDir(unsigned char* DirBuffer, char* NameBuffer, unsigned int* EntryPos, bool ChangeLocalDir, bool ReadOnly);

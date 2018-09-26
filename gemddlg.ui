@@ -22,6 +22,11 @@
     <height>452</height>
    </size>
   </property>
+  <property name="font">
+   <font>
+    <family>DejaVu Sans</family>
+   </font>
+  </property>
   <property name="windowTitle">
    <string>GemDOS file browser &amp; transfer</string>
   </property>
@@ -37,6 +42,11 @@
      <width>211</width>
      <height>20</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string/>
@@ -54,6 +64,11 @@
      <height>20</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>Folder name:</string>
    </property>
@@ -69,6 +84,11 @@
      <width>121</width>
      <height>21</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="maxLength">
     <number>12</number>
@@ -86,6 +106,11 @@
      <height>20</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string/>
    </property>
@@ -102,6 +127,11 @@
      <height>20</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>use curre&amp;nt time for file timestamp</string>
    </property>
@@ -117,6 +147,11 @@
      <width>90</width>
      <height>20</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>Partiti&amp;ons:</string>
@@ -137,6 +172,11 @@
      <height>17</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string>Dir</string>
    </property>
@@ -155,6 +195,11 @@
      <width>241</width>
      <height>20</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string/>
@@ -251,7 +296,7 @@
    </property>
    <property name="font">
     <font>
-     <family>Monospace</family>
+     <family>DejaVu Sans Mono</family>
      <weight>50</weight>
      <bold>false</bold>
     </font>
@@ -418,6 +463,11 @@
      <height>32</height>
     </rect>
    </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
+   </property>
    <property name="text">
     <string/>
    </property>
@@ -478,6 +528,11 @@
      <width>75</width>
      <height>31</height>
     </rect>
+   </property>
+   <property name="font">
+    <font>
+     <family>DejaVu Sans</family>
+    </font>
    </property>
    <property name="text">
     <string>save FAT</string>

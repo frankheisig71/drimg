@@ -36,14 +36,12 @@ public:
     bool OpenInputFile(HANDLE* f, char* Name, bool IsDevice);
     bool OpenOutputFile(HANDLE* f, char* Name, bool IsDevice);
     long long CopyImage(HANDLE f_in, HANDLE f_out, ULONG SecCnt, bool swap, bool h256rb, bool fromOrig, ULONG* writtenSec);
-    bool IsPhysDevice(HANDLE fh);
     #else
     bool OpenSavingFile(FILE** f, bool hdf);
     bool OpenReadingFile(FILE** f, bool hdf);
     bool OpenInputFile(FILE** f, char* Name, bool IsDevice);
     bool OpenOutputFile(FILE** f, char* Name, bool IsDevice);
     long long CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool swap, bool h256rb, bool fromOrig, ULONG* writtenSec);
-    bool IsPhysDevice(FILE* f);
     #endif
 
 
