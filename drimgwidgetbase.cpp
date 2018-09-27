@@ -1021,6 +1021,8 @@ void drimgwidgetbase::on_FileTrButton_clicked()
 #define SML_SEC_BUF_HALF 0x100
 #define BIG_SEC_BUF_SIZE 0x100000
 #define BIG_SEC_BUF_HALF 0x080000
+#define HUGE_SEC_BUF_SIZE 0x10000000
+#define HUGE_SEC_BUF_HALF 0x08000000
 #define READ_ERROR   -1
 #define WRITE_ERROR  -2
 #define MEM_ERROR    -3
@@ -1183,12 +1185,14 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
 {
     int status = 0;
     int prog = 0;
-    int prnxt = 1;
+    int prnxt = 0;
     long long copied = 0;
+    ULONG _wrSec = 0;
     unsigned char *bufr, *_bufr;
     unsigned char *buf2, *_buf2;
+    unsigned long long x;
 
-    *writtenSec = 0;
+    *writtenSec = _wrSec;
     ui->progressBar1->setValue(0);
 
     #ifdef WINDOWS
@@ -1225,36 +1229,40 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
           ULONG bg = SecCnt >> 11;
           ULONG sm = SecCnt & 0x7FF;
           setCursor(QCursor(Qt::WaitCursor));
-          for( m = 0; m < bg; m++ ) {
+          for(ULONG m = 0; m < bg; m++ ) {
              if ((status = CopyBigSect(f_in, f_out, bufr, buf2, swap, h256rb, fromOrig)) < 0) { break; }
              copied += status;
-             *writtenSec += 0x800;
-             prog = 99*(m << 11)/SecCnt;
+             _wrSec += 0x800;
+             x = (unsigned long long)_wrSec * 99;
+             x = x / (unsigned long long)SecCnt;
+             prog = x;
              if (prog>prnxt) {
                 #ifdef WINDOWS
                 FlushFileBuffers(f_out);
                 #else
                 fdatasync(fileno(f_out));
                 #endif
-                ui->progressBar1->setValue(prog+1);
+                ui->progressBar1->setValue(prog);
                 prnxt += 1;
 
              }
              QCoreApplication::processEvents();
              if (abortf) { abortf=0 ; break; }
           }
-          for( m = 0; m < sm; m++ ) {
+          for(ULONG m = 0; m < sm; m++ ) {
              if ((status = CopySmallSect(f_in, f_out, bufr, buf2, swap, h256rb, fromOrig)) < 0) { break; }
              copied += status;
-             *writtenSec += 1;
-             prog = 99*m/SecCnt;
+             _wrSec += 1;
+             x = (unsigned long long)_wrSec * 99;
+             x = x / (unsigned long long)SecCnt;
+             prog = x;
              if (prog>prnxt) {
                 #ifdef WINDOWS
                 FlushFileBuffers(f_out);
                 #else
                 fdatasync(fileno(f_out));
                 #endif
-                ui->progressBar1->setValue(prog+1);
+                ui->progressBar1->setValue(prog);
                 prnxt += 1;
              }
              QCoreApplication::processEvents();
@@ -1265,6 +1273,7 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
        }
        free(_bufr);
     }
+    *writtenSec = _wrSec;
     if (status < 0) {
        #ifdef WINDOWS
        if (LastIOError == ERROR_ACCESS_DENIED){
