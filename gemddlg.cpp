@@ -621,7 +621,7 @@ int ReadSectors( int StartSector, int Count, unsigned char *Buffer)
    unsigned char buf[MIN_SECTOR_SIZE];
 
    if(SeekFileX64(fhdl, PartStartPosition+StartSector*PartSectorSize, SEEK_SET) == INVALID_SET_FILE_POINTER){
-      SetLastError(INVALID_SET_FILE_POINTER);
+      LastIOError = INVALID_SET_FILE_POINTER;
       return 0;
    }
    //lseek(drih, PartStartPosition+StartSector*PartSectorSize, 0 );
