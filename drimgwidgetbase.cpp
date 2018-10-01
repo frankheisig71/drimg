@@ -799,13 +799,22 @@ void drimgwidgetbase::on_quitButton_clicked()
 
 void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
 {
+    #ifdef WINDOWS
     unsigned char _bufr[MIN_SECTOR_SIZE + MIN_SECTOR_SIZE]; //double for alignment
+    #else
+    unsigned char _bufr[MIN_SECTOR_SIZE];
+    #endif
+
     unsigned char bufsw[MIN_SECTOR_SIZE];
     unsigned char *bufr;
              char str[128];
     QString qhm;
 
+    #ifdef WINDOWS
     bufr = alignBuffer(_bufr, MIN_SECTOR_SIZE);
+    #else
+    bufr = _bufr;
+    #endif
     ui->FileTrButton->setEnabled(false);
     ui->readButton->setEnabled(false);
     ui->writeButton->setEnabled(false);
@@ -871,7 +880,11 @@ void drimgwidgetbase::on_listBox1_clicked(const QModelIndex &index)
     }
     int driveNo = IsPhysDevice(finp);
     if (driveNo != NO_PHYS_DRIVE){
+       #ifdef WINDOWS
        qhm.setNum( physSecSize[driveNo]);
+       #else
+       qhm.setNum(MIN_SECTOR_SIZE);
+       #endif
        qhm.insert(0, "Sec. size: ");
        qhm.append(" bytes");
        ui->inf5Label->setText(qhm);
