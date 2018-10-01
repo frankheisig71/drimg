@@ -1000,14 +1000,18 @@ void drimgwidgetbase::on_FileTrButton_clicked()
    getCHS();
    segflag = 0;
    if (Filesys == 0){
-       QMessageBox::information(this, "No drive selected", "Please select a drive or open an image.",QMessageBox::Cancel, QMessageBox::Cancel);
+      QMessageBox *msg = new QMessageBox(QMessageBox::Critical, "No drive selected", "Please select a drive or open an image.", QMessageBox::Cancel, this);
+      msg->setFont(this->font());
+      msg->exec();
    }
    else if ((Filesys == 11) || (Filesys == 13) || (Filesys == 1)) {
       gem = new GemdDlg(this);
       gem->exec();
    }
    else {
-      QMessageBox::information(this, "Not implemented yet", "Not implemented yet.",QMessageBox::Cancel, QMessageBox::Cancel);
+      QMessageBox *msg = new QMessageBox(QMessageBox::Critical, "Not implemented yet", "Not implemented yet.", QMessageBox::Cancel, this);
+      msg->setFont(this->font());
+      msg->exec();
       /*
       transferZ().exec() ;  //ZX Charea dlg call
       if (geohit) {
@@ -1159,7 +1163,9 @@ bool drimgwidgetbase::OpenInputFile(FILE** f, char* Name, bool IsDevice)
       QString qhn;
       if (IsDevice) {qhn = "Device";} else {qhn = "File";};
       qhn.append(" open error.");
-      QMessageBox::critical(this, qhn, qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+      QMessageBox *msg = new QMessageBox(QMessageBox::Critical, qhn, qhm, QMessageBox::Cancel, this);
+      msg->setFont(this->font());
+      msg->exec();
       return false;
    } else {
       return true;
@@ -1183,7 +1189,9 @@ bool drimgwidgetbase::OpenOutputFile(FILE** f, char* Name, bool IsDevice)
       QString qhn;
       if (IsDevice) {qhn = "Device";} else {qhn = "File";};
       qhn.append(" open error.");
-      QMessageBox::critical(this, qhn, qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+      QMessageBox *msg = new QMessageBox(QMessageBox::Critical, qhn, qhm, QMessageBox::Cancel, this);
+      msg->setFont(this->font());
+      msg->exec();
       return false;
    } else {
       return true;
@@ -1304,7 +1312,9 @@ long long drimgwidgetbase::CopyImage(FILE* f_in, FILE* f_out, ULONG SecCnt, bool
        if (status == MEM_ERROR)  {qhm.insert(0, "Out of memory error. (");}
        if (status == PARAM_ERROR){qhm.insert(0, "Parameter error. (");}
        qhm.append(")\nDamn!");
-       QMessageBox::critical(this, "I/O error.", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+       QMessageBox *msg = new QMessageBox(QMessageBox::Critical, "I/O error", qhm, QMessageBox::Cancel, this);
+       msg->setFont(this->font());
+       msg->exec();
        return status;
        }
     }
@@ -1641,7 +1651,7 @@ void drimgwidgetbase::on_writeButton_clicked()
       else{
          strcpy(physd, detDev[selected]);
          if (( ov2ro ) && ( SecCnt>0x800000)) {
-            QMessageBox::critical(this, "Read only.", "Read only for large drives!\nStop",QMessageBox::Cancel, QMessageBox::Cancel);
+            ShowErrorDialog(this, "Read only for large drives!\nStop", NO_ERROR_NUMBER);
             enableAll();
             act=0;
             return;

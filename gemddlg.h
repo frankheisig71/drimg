@@ -41,6 +41,7 @@ typedef struct _M_VOLUME_DISK_EXTENTS {
 #define MAX_DRIVE_COUNT 26
 #define INVALID_SET_FILE_POINTER -1
 #endif
+#define NO_ERROR_NUMBER ERROR_SUCCESS
 
 namespace Ui {
 class GemdDlg;

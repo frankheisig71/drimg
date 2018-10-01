@@ -27,6 +27,7 @@
 #include <QCloseEvent>
 #include <QTreeView>
 #include <QtGui>
+#include <QFontDatabase>;
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -189,6 +190,11 @@ GemdDlg::GemdDlg(QWidget *parent) :
     ui->quitP->setIcon(QIcon(":/Icons/Quit.png"));
     ui->setddP->setIcon(QIcon(":/Icons/DestDir.png"));
     ui->newfP->setIcon(QIcon(":/Icons/OpenFolder.png"));
+    int result = QFontDatabase::addApplicationFont(":/Icons/AtariSTFont.ttf");
+    if (result >= 0){
+       QFont AtariSys("Atari ST System Font", 12);
+       ui->filesLB->setFont(AtariSys);
+    }
     OpenDialog();
 }
 
@@ -272,7 +278,7 @@ void GemdDlg::OpenDialog()
       fhdl = OpenFileX(loadedF, "r+b" );
    }
    if (fhdl == FILE_OPEN_FAILED) {
-      QMessageBox::critical(this, "Error", "Drive/file open error ", QMessageBox::Cancel, QMessageBox::Cancel);
+      ShowErrorDialog(this, "Drive/file open error.", LastIOError);
       return; //gemdpex
    }
    // Load bootsector
@@ -572,7 +578,7 @@ unsigned int GetFreeClusters(void)
 }
 void ShowErrorDialog(QWidget* parent, const char* message, int number){
     QString qhm;
-    if (number > 0) {
+    if (number > NO_ERROR_NUMBER) {
        qhm.setNum(number);
        qhm.insert(0, " (");
        qhm.insert(0, message);
@@ -1485,7 +1491,9 @@ void GemdDlg::EraseFile(unsigned char* DirBuffer, int EntryPos)
       FATfreeCluster(StartCluster);
       StartCluster = NextCluster;
       if (StartCluster == 0){
-          QMessageBox::critical(this, EntryName, "FAT error! Cluster chain ends with zero.", QMessageBox::Cancel, QMessageBox::Cancel);
+          char message[128];
+          sprintf(message, "Erase %s:\nFAT error! Cluster chain ends with zero.", EntryName);
+          ShowErrorDialog(this, message,  NO_ERROR_NUMBER);
           break;
       }
    }
@@ -1672,24 +1680,28 @@ int GemdDlg::AddSingleDirToCurrentDir(QString FilePathName, QString FullPath, un
     int res = MakeFATFileName(FilePathName, name);
     //char res = PadtoFATFileName(subdnam, name) ;
     if (!res) {
-       QMessageBox::critical(this, tr("Invalid filename!"), tr("Must have dot before ext."), QMessageBox::Cancel, QMessageBox::Cancel);
+       char message[128];
+       sprintf(message, "%s:\nInvalid file name!\nMust have dot before extension.", name);
+       ShowErrorDialog(this, message, NO_ERROR_NUMBER);
        return -1;
     }
     // Testing
     ui->exwht->setText(name);
     // On free cluster at least needed
     if ( GetFreeClusters() < 1 ) {
-      QMessageBox::critical(this, tr("Partition full!"), tr("No place"), QMessageBox::Cancel, QMessageBox::Cancel);
-      return -1;
+       ShowErrorDialog(this, "Partition full!\nNo space left.", NO_ERROR_NUMBER);
+       return -1;
     }
     res = CheckNameExistsInDir(name, DirBuffer) ;
     if (!res) {
-       QMessageBox::critical(this, tr("Name exists!"), tr("Name already in Dir."), QMessageBox::Cancel, QMessageBox::Cancel);
+       char message[128];
+       sprintf(message, "%s:\nDir/File name already exists!\nTry another name or erase the existing file first", name);
+       ShowErrorDialog(this, message, NO_ERROR_NUMBER);
        return -1;
     }
     // Now seek first free slot in DIR:
     if (!GetFirstFreeDirSlot(DirBuffer, &EntryPos)){
-       QMessageBox::critical(this, tr("DIR full!"), tr("Error"), QMessageBox::Cancel, QMessageBox::Cancel);
+       ShowErrorDialog(this, "Directory full!\nNo fiel entry slot left.", NO_ERROR_NUMBER);
        return -1;
     }
     // Copy name at EntryPos, add timestamp and directory flag
@@ -1784,12 +1796,16 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    // Ignore directories:
    stat( LocalFileName , &fparms );
    if (S_IFDIR & fparms.st_mode ) {
-      QMessageBox::critical(this, LocalFileName, tr("Entered AddFile with directory entry!"), QMessageBox::Cancel, QMessageBox::Cancel);
+      char message[128];
+      sprintf(message, "Add file %s:\nEntered AddFile with directory entry!", LocalFileName);
+      ShowErrorDialog(this, message, NO_ERROR_NUMBER);
       return(true);
    }
    inFile = fopen(LocalFileName, "rb");
    if (inFile == NULL) {
-      QMessageBox::critical(this, tr("File open error"), FilePathName, QMessageBox::Cancel, QMessageBox::Cancel);
+      char message[128];
+      sprintf(message, "Add file %s:\nFile open error!", FATFileName);
+      ShowErrorDialog(this, message, GetLastError());
       return(false);
    }
    //get filelength :
@@ -1802,20 +1818,26 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
    if ( FileByteLength % n) FileClusterCount++ ;
    // Check is there enough space:
    if ( GetFreeClusters() < FileClusterCount ) {
-      QMessageBox::critical(this, tr("No place for file"), FilePathName, QMessageBox::Cancel, QMessageBox::Cancel);
+      char message[128];
+      sprintf(message, "Add file %s:\nNot enough space left.", FATFileName);
+      ShowErrorDialog(this, message, NO_ERROR_NUMBER);
       fclose(inFile);
       return(false);
    }
    // Is name already in cur DIR?
    res = CheckNameExistsInDir(FATFileName, dirbuf) ;
    if (!res) {
-      QMessageBox::critical(this, tr("Name exists!"), "Name already in Dir.", QMessageBox::Cancel, QMessageBox::Cancel);
+      char message[128];
+      sprintf(message, "Add file %s:\nFile name already exists!\nTry another name or erase the existing file first.", FATFileName);
+      ShowErrorDialog(this, message, NO_ERROR_NUMBER);
       fclose(inFile);
       return(false);
    }
    // Now seek first free slot in DIR:
    if (!GetFirstFreeDirSlot(DirBuffer, &EntryPos)) {
-      QMessageBox::critical(this, tr("Directory full!"), "Error", QMessageBox::Cancel, QMessageBox::Cancel);
+      char message[128];
+      sprintf(message, "Add file %s:\nDirectory full!\nNo file entry slot left.", FATFileName);
+      ShowErrorDialog(this, message, NO_ERROR_NUMBER);
       fclose(inFile);
       return(false);
    }
@@ -1876,7 +1898,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
                if ((CurrentFileCluster = SeekNextFreeCluster(CurrentFileCluster)) == INVALID_VALUE)
                {
                   MarkCluster(PreviousFileCluster, LAST_CLUSTER) ; break ;
-                  QMessageBox::critical(this, tr("Directory full!"), tr("File not written completely! (Should not happen!)"), QMessageBox::Cancel, QMessageBox::Cancel);
+                  ShowErrorDialog(this, "No space left on this partition.\nFile not written completely - FAT corrupt?", NO_ERROR_NUMBER);
                }
                // write into FAT
                MarkCluster(PreviousFileCluster, CurrentFileCluster);
@@ -1963,9 +1985,14 @@ void GemdDlg::on_DeleteFiles_clicked()
    bool failed = true;
 
    if (ui->filesLB->currentRow() < 0) { return; }
-   if ( QMessageBox::warning(this, "Deleting files!",
-                             "You are about to delete files and / or directories.\nThey can not be restored!\n\nAre you sure?",
-                             QMessageBox::Yes | QMessageBox::Cancel) == QMessageBox::Cancel) { return; }
+   else {
+      QMessageBox *msg = new QMessageBox(QMessageBox::Warning, "Deleting files!",
+                                        "You are about to delete files and / or directories.\nThey can not be restored!\n\nAre you sure?",
+                                        QMessageBox::Yes | QMessageBox::Cancel, this);
+      msg->setFont(this->font());
+      msg->exec();
+      if (msg->exec() == QMessageBox::Cancel) { return; }
+   }
 
    //QMessageBox::critical(this, "Deleting!", "Deleting", QMessageBox::Cancel);
 
@@ -1989,7 +2016,10 @@ void GemdDlg::on_DeleteFiles_clicked()
          if (IsSubDir(dirbuf, MainEntryDirPos)) {
             if (!YesToAll) {
                sprintf(message, "Delete subdirectory %s including all files below?", name);
-               button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+               QMessageBox *msg = new QMessageBox(QMessageBox::Warning, "Deleting files!", message,
+                                                  QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
+               msg->setFont(this->font());
+               button = msg->exec();
                if (button ==  QMessageBox::No){ continue; }//next entry
                if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
                YesToAll = (button ==  QMessageBox::YesToAll);
@@ -2009,7 +2039,10 @@ void GemdDlg::on_DeleteFiles_clicked()
                   if (IsFile(dirbuf, n)) { //no subdir, it's a file
                      if (!YesToAll) {
                         sprintf(message, "Delete file %s?", name);
-                        button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+                        QMessageBox *msg = new QMessageBox(QMessageBox::Warning, name, message,
+                                                           QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
+                        msg->setFont(this->font());
+                        button = msg->exec();
                         if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
                         if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
                         YesToAll = (button ==  QMessageBox::YesToAll);
@@ -2019,7 +2052,10 @@ void GemdDlg::on_DeleteFiles_clicked()
                      // its a subdir -> store pos in dir, leave n loop
                      if (!YesToAll) {
                         sprintf(message, "Delete subdirectory %s including all files below?", name);
-                        button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+                        QMessageBox *msg = new QMessageBox(QMessageBox::Warning, name, message,
+                                                           QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
+                        msg->setFont(this->font());
+                        button = msg->exec();
                         if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
                         if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
                         YesToAll = (button ==  QMessageBox::YesToAll);
@@ -2049,7 +2085,7 @@ void GemdDlg::on_DeleteFiles_clicked()
                }
                CurrentDirEntryPos += 32; // point to next entry
                //are we in subdir? :
-               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
+               if (dirbuf[0] != 0x2E) { ShowErrorDialog(this, "Curious problem!\nBounced to bottom of root directory.\n This should never happen!", NO_ERROR_NUMBER); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
             }while( PartSubDirLevel > 0);
             if (Abort) { break; }
             continue; //next main dir entry
@@ -2057,7 +2093,11 @@ void GemdDlg::on_DeleteFiles_clicked()
          if (Abort) { break; }
          if (!YesToAll) {
             sprintf(message, "Delete file %s?", name);
-            button = QMessageBox::warning(this, name, message, QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort);
+            sprintf(message, "Delete subdirectory %s including all files below?", name);
+            QMessageBox *msg = new QMessageBox(QMessageBox::Warning, name, message,
+                                               QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
+            msg->setFont(this->font());
+            button = msg->exec();
             if (button ==  QMessageBox::No){ FileRemainsLevel = DirLevel; continue; }//next entry
             if ((Abort = (button ==  QMessageBox::Abort)) == true){ break; }
             YesToAll = (button ==  QMessageBox::YesToAll);
@@ -2164,7 +2204,7 @@ void GemdDlg::on_ExtractFiles_clicked()
                }
                CurrentDirEntryPos += 32; // point to next entry
                //are we in subdir? :
-               if (dirbuf[0] != 0x2E) { QMessageBox::critical(this, "Curious problem!", "Bounced to bottom of root directory.\n This should never happen!", QMessageBox::Cancel); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
+               if (dirbuf[0] != 0x2E) {  ShowErrorDialog(this, "Curious problem!\nBounced to bottom of root directory.\n This should never happen!", NO_ERROR_NUMBER); return; } //If it's not 'dot' entry then we're through with root DIR. If, it's the end of a SUBDIR
             }while( PartSubDirLevel > 0);
             continue; //next main dir entry
          }
@@ -2211,7 +2251,7 @@ void GemdDlg::on_newfP_clicked()
    QString litet = ui->dirED->text();
    //GetDlgItemText(hDlgWnd, GemCreD , szText , (LPARAM) 64);
    if ( litet.length() == 0 ){
-      QMessageBox::critical(this, tr("Invalid filename!"), tr("Enter something"), QMessageBox::Cancel, QMessageBox::Cancel);
+      ShowErrorDialog(this, "Invalid filename!\nEnter something.", NO_ERROR_NUMBER);
       return;
    }
    // Look is name base 8 space:
@@ -2220,7 +2260,7 @@ void GemdDlg::on_newfP_clicked()
       if (litet[n]==' ') c++ ;
    }
    if (c==8) {
-      QMessageBox::critical(this, tr("Invalid filename!"), tr("All the spaces..."), QMessageBox::Cancel, QMessageBox::Cancel);
+      ShowErrorDialog(this, "Invalid filename!\nAll the spaces...", NO_ERROR_NUMBER);
       return;
    }
    int EntryPos = AddSingleDirToCurrentDir(litet, litet, dirbuf, false);
