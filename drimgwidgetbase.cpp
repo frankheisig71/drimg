@@ -1617,7 +1617,10 @@ void drimgwidgetbase::on_writeButton_clicked()
       }
       qhm.append("\nAre you sure?");
       // File to drive
-      if (QMessageBox::question(this, "Writing", qhm, QMessageBox::Yes|QMessageBox::No, QMessageBox::No) == QMessageBox::No)
+      QMessageBox *msg = new QMessageBox(QMessageBox::Question, "Writing", qhm, QMessageBox::Yes|QMessageBox::No, this);
+      msg->setDefaultButton(QMessageBox::No);
+      msg->setFont(this->font());
+      if (msg->exec() == QMessageBox::No)
       { enableAll(); act=0; return; }
       if ( selected==99) {
          OpenOutputFile(&fout, loadedF, false);
@@ -1665,7 +1668,9 @@ void drimgwidgetbase::on_writeButton_clicked()
          long long copied = CopyImage(finp, fout, fsecc, Fsub, form == 2, false, &WSec);
          #ifdef WINDOWS
          if (copied == ACCESS_ERROR){
-            QMessageBox::question(this, "Access error", "It seems there is a mounted partition in the drive. \nMounting is automatically done by Windows, so you need to erase this partition before writing to drive. \nUse disk management tool or do it by command line (read READ.ME').", QMessageBox::Cancel, QMessageBox::Cancel);
+            QMessageBox *msg = new QMessageBox(QMessageBox::Critical, "Access error", "It seems there is a mounted partition in the drive. \nMounting is automatically done by Windows, so you need to erase this partition before writing to drive. \nUse disk management tool or do it by command line.\n(read READ.ME)", QMessageBox::Cancel, this);
+            msg->setFont(this->font());
+            msg->exec();
             qhm = "";
             ui->curopLabel->setText(qhm);
             if (WSec == fsecc) { ui->progressBar1->setValue(0);}

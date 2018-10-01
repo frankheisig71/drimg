@@ -580,7 +580,9 @@ void ShowErrorDialog(QWidget* parent, const char* message, int number){
     } else {
        qhm = message;
     }
-    QMessageBox::critical(parent, "Error", qhm, QMessageBox::Cancel, QMessageBox::Cancel);
+    QMessageBox *msg = new QMessageBox(QMessageBox::Critical, "Error", qhm, QMessageBox::Cancel, parent);
+    msg->setFont(parent->font());
+    msg->exec();
 }
 
 

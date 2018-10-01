@@ -2,7 +2,7 @@
 #define GEMDDLG_H
 
 //#define FRANKS_DEBUG
-//#define WINDOWS
+#define WINDOWS
 
 #ifdef WINDOWS
 // #undef WINVER
@@ -94,13 +94,9 @@ private slots:
     void on_ExtractFiles_clicked();
     void on_timeCB_clicked();
     void on_AddFiles_clicked();
-
     void on_newfP_clicked();
-
     void on_desallP_clicked();
-
     void on_quitP_clicked();
-
     void on_saveFAT_clicked();
 
 private:
