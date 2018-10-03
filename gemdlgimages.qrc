@@ -11,6 +11,6 @@
         <file>Icons/atarifolder.png</file>
         <file>Icons/DeleteFiles.png</file>
         <file>Icons/AddDir.png</file>
-        <file>Icons/AtariSTFont.ttf</file>
+        <file>Font/AtariSTFontUni.ttf</file>
     </qresource>
 </RCC>

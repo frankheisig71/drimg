@@ -27,7 +27,7 @@
 #include <QCloseEvent>
 #include <QTreeView>
 #include <QtGui>
-#include <QFontDatabase>;
+#include <QFontDatabase>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,7 +190,7 @@ GemdDlg::GemdDlg(QWidget *parent) :
     ui->quitP->setIcon(QIcon(":/Icons/Quit.png"));
     ui->setddP->setIcon(QIcon(":/Icons/DestDir.png"));
     ui->newfP->setIcon(QIcon(":/Icons/OpenFolder.png"));
-    int result = QFontDatabase::addApplicationFont(":/Icons/AtariSTFont.ttf");
+    int result = QFontDatabase::addApplicationFont(":/Font/AtariSTFontUni.ttf");
     if (result >= 0){
        QFont AtariSys("Atari ST System Font", 12);
        ui->filesLB->setFont(AtariSys);
@@ -201,6 +201,42 @@ GemdDlg::GemdDlg(QWidget *parent) :
 GemdDlg::~GemdDlg()
 {
     delete ui;
+}
+
+#define MAP_CHARS 28                //ü  ,Ü   ,ä   ,Ä   ,ö   ,Ö   ,ß
+const char AtariChar[MAP_CHARS] =  {char(0x81),char(0x9A),char(0x84),char(0x8E),char(0x94),char(0x99),char(0x9E),
+                                    char(0xB6),char(0x85),char(0xB7),char(0x8F),char(0x86),char(0x92),char(0x80),
+                                    char(0x83),char(0xB0),char(0xA0),char(0x91),char(0x90),char(0x8A),char(0x82),
+                                    char(0x88),char(0x89),char(0x87),char(0x8B),char(0x8C),char(0x8D),char(0xA1)};
+const wchar_t *MappedChar[MAP_CHARS] = {L"ü",L"Ü",L"ä",L"Ä",L"ö",L"Ö",L"ß",
+                                        L"À",L"à",L"Ã",L"Å",L"å",L"Æ",L"Ç",
+                                        L"â",L"ã",L"á",L"æ",L"É",L"è",L"é",
+                                        L"ê",L"ë",L"ç",L"ï",L"î",L"ì",L"í"};
+//const wchar_t MappedChar[MAP_CHARS] = {char(0xFC),char(0xDC),char(0xE4),char(0xC4),char(0xF6),char(0xD6)};
+//static char AtariNameString[16];
+//const QChar AtariChar[MAP_CHARS] =  {QChar(0x81),QChar(0x9A),QChar(0x84),QChar(0x8E),QChar(0x94),QChar(0x99)};
+//const QChar MappedChar[MAP_CHARS] = {QChar(0xFC),QChar(0xDC),QChar(0xE4),QChar(0xC4),QChar(0xF6),QChar(0xD6)};
+static QString AtariNameString;
+QString GetAtariFileName(const char* buf)
+{
+   //AtariNameString[0] = '\0';
+   AtariNameString.clear();
+   for (int i=0; i<15; i++){
+      bool mapped = false;
+      if (buf[i] == '\0') { break; }
+      if ((unsigned char)(buf[i]) > (unsigned char)(0x7D)) {
+         for (int k=0; k<MAP_CHARS; k++){
+            if(buf[i] == AtariChar[k]){
+               AtariNameString += QString::fromWCharArray(MappedChar[k]);
+               mapped = true;
+               break;
+            }
+         }
+      }
+      if (!mapped) { AtariNameString += buf[i]; }
+      //AtariNameString[i+1] = '\0';
+   }
+   return AtariNameString;
 }
 
 void GenerateFileName(unsigned char* buf, int offs, QString *name)
@@ -217,7 +253,8 @@ void GenerateFileName(unsigned char* buf, int offs, QString *name)
    nstr[11] = buf[offs+10];
    nstr[12] = ' ';
    nstr[13] = ' ';
-   nstr[14] = 0 ;
+   nstr[14] = '\0';
+
    int o = buf[offs+11] ;
    if ( (o & 16) == 16 ) {
       name->append("DIR");
@@ -230,7 +267,7 @@ void GenerateFileName(unsigned char* buf, int offs, QString *name)
       unsigned int dirflen = 16777216*buf[offs+31]+65536*buf[offs+30]+256*buf[offs+29]+buf[offs+28] ;
       name->setNum(dirflen);
    }
-   name->insert(0, nstr);
+   name->insert(0, GetAtariFileName(nstr));
 }
 
 void GemdDlg::OpenDialog()
