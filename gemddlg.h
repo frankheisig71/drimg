@@ -2,7 +2,7 @@
 #define GEMDDLG_H
 
 //#define FRANKS_DEBUG
-#define WINDOWS
+//#define WINDOWS
 
 #ifdef WINDOWS
 // #undef WINVER
@@ -40,6 +40,7 @@ typedef struct _M_VOLUME_DISK_EXTENTS {
 #else
 #define MAX_DRIVE_COUNT 26
 #define INVALID_SET_FILE_POINTER -1
+#define ERROR_SUCCESS 0
 #endif
 #define NO_ERROR_NUMBER ERROR_SUCCESS
 
