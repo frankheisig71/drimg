@@ -2,7 +2,7 @@
 #define GEMDDLG_H
 
 //#define FRANKS_DEBUG
-#define WINDOWS
+//#define WINDOWS
 
 #ifdef WINDOWS
 // #undef WINVER

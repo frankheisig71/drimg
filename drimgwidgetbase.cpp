@@ -234,6 +234,12 @@ HANDLE OpenDevice(const char* name, const char * mode)
              break;
           }
        }
+       if (CrMode & GENERIC_WRITE){
+          if (DeviceIoControl(fh, FSCTL_LOCK_VOLUME, NULL, 0, NULL, 0, &junk, NULL) == 0){
+             LastIOError = GetLastError();
+             CloseFileX(&fh);
+          }
+       }
     }
     return fh;
 }

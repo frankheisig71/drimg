@@ -203,15 +203,20 @@ GemdDlg::~GemdDlg()
     delete ui;
 }
 
-#define MAP_CHARS 28                //ü  ,Ü   ,ä   ,Ä   ,ö   ,Ö   ,ß
+#define MAP_CHARS 42                //ü  ,Ü   ,ä   ,Ä   ,ö   ,Ö   ,ß
 const char AtariChar[MAP_CHARS] =  {char(0x81),char(0x9A),char(0x84),char(0x8E),char(0x94),char(0x99),char(0x9E),
                                     char(0xB6),char(0x85),char(0xB7),char(0x8F),char(0x86),char(0x92),char(0x80),
                                     char(0x83),char(0xB0),char(0xA0),char(0x91),char(0x90),char(0x8A),char(0x82),
-                                    char(0x88),char(0x89),char(0x87),char(0x8B),char(0x8C),char(0x8D),char(0xA1)};
+                                    char(0x88),char(0x89),char(0x87),char(0x8B),char(0x8C),char(0x8D),char(0xA1),
+                                    char(0xB8),char(0xB5),char(0xB1),char(0xB4),char(0x95),char(0xA2),char(0x93),
+                                    char(0xB2),char(0xB3),char(0xA5),char(0xA4),char(0x96),char(0x97),char(0xA3)};
 const wchar_t *MappedChar[MAP_CHARS] = {L"ü",L"Ü",L"ä",L"Ä",L"ö",L"Ö",L"ß",
                                         L"À",L"à",L"Ã",L"Å",L"å",L"Æ",L"Ç",
                                         L"â",L"ã",L"á",L"æ",L"É",L"è",L"é",
-                                        L"ê",L"ë",L"ç",L"ï",L"î",L"ì",L"í"};
+                                        L"ê",L"ë",L"ç",L"ï",L"î",L"ì",L"í",
+                                        L"Õ",L"Œ",L"õ",L"œ",L"ò",L"ó",L"ô",
+                                        L"Ø",L"ø",L"Ñ",L"ñ",L"û",L"ù",L"ú"};
+
 //const wchar_t MappedChar[MAP_CHARS] = {char(0xFC),char(0xDC),char(0xE4),char(0xC4),char(0xF6),char(0xD6)};
 //static char AtariNameString[16];
 //const QChar AtariChar[MAP_CHARS] =  {QChar(0x81),QChar(0x9A),QChar(0x84),QChar(0x8E),QChar(0x94),QChar(0x99)};
@@ -721,7 +726,7 @@ unsigned long GemdDlg::WriteSectors( int StartSector, int Count, unsigned char *
     fdatasync(fileno(fhdl));
     #endif
     }
-    return written;
+    return written / PartSectorSize;
 }
 void GemdDlg::LoadDirBuf(unsigned int *StartCluster, unsigned char* DirBuffer)
 {
@@ -750,10 +755,10 @@ bool GemdDlg::WriteCurrentDirBuf(void)
 {
    unsigned long CurrentBufOffs = 0;
 
-   if ( PartSubDirLevel == 0 ) WriteSectors( PartFirstRootDirSector, PartRootDirSectors, dirbuf, false);
+   if ( PartSubDirLevel == 0 ) { return (WriteSectors( PartFirstRootDirSector, PartRootDirSectors, dirbuf, false) == PartRootDirSectors); }
    else  {
       for (unsigned int i=0; i<DirCurrentClusterCnt; i++){
-         if (WriteSectors( DirCurrentClustes[i], PartSectorsPerCluster, dirbuf+CurrentBufOffs, false) == 0)
+         if (WriteSectors( DirCurrentClustes[i], PartSectorsPerCluster, dirbuf+CurrentBufOffs, false) < PartSectorsPerCluster)
          { return false; }
          CurrentBufOffs = CurrentBufOffs+PartClusterByteLength;
       }
@@ -763,10 +768,10 @@ bool GemdDlg::WriteCurrentDirBuf(void)
 }
 bool GemdDlg::WriteFAT(void){
    //Write FAT back:
-   if (WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer, false) == 0)
+   if (WriteSectors( PartReservedSectors, PartSectorsPerFAT, PartFATbuffer, false) < PartSectorsPerFAT)
    { return false; }
    //Second FAT
-   if (WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer, true))
+   if (WriteSectors( PartReservedSectors+PartSectorsPerFAT, PartSectorsPerFAT, PartFATbuffer, true) < PartSectorsPerFAT)
    { return false; }
    ShowPartitionUsage();
    { return true; }
@@ -1313,7 +1318,7 @@ void GemdDlg::GetFATFileName(unsigned char* DirBuffer, int EntryPos, char* NameB
 	  }
    }
    NameBuffer[i] = 0 ; // String term.
-   ui->exwht->setText(NameBuffer);
+   ui->exwht->setText(GetAtariFileName(NameBuffer));
    //ui->errti->setText(" ");
    QCoreApplication::processEvents();
 }
@@ -1826,7 +1831,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
 
    strcpy(LocalFileName, (char*)FilePathName.toLatin1().data());   // Filename with path?
    MakeFATFileName(FilePathName, FATFileName);
-   ui->exwht->setText(FATFileName);   // show corrected filename
+   ui->exwht->setText(GetAtariFileName(FATFileName));   // show corrected filename
    QCoreApplication::processEvents();
    //sleep(1); //testing
    // Open file and get it's length:
@@ -1915,7 +1920,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
       else { k =  PartClusterByteLength; }
       res=fread(trasb,1,k,inFile);
       FileSector = PartHeadSectors+(CurrentFileCluster-2) * PartSectorsPerCluster;
-      failed = (WriteSectors(FileSector, PartSectorsPerCluster, trasb, false) == 0);
+      failed = (WriteSectors(FileSector, PartSectorsPerCluster, trasb, false) < PartSectorsPerCluster);
       if (!failed){
          // if only 1 cluster mark it as last:
          if (FileClusterCount==1) {
@@ -1942,7 +1947,7 @@ bool GemdDlg::AddFileToCurrentDir(QString FilePathName, unsigned char* DirBuffer
                MarkCluster(CurrentFileCluster, LAST_CLUSTER) ;
                //PreviousFileCluster = m;
                FileSector = PartHeadSectors+(CurrentFileCluster - 2)*PartSectorsPerCluster ;
-               failed = (WriteSectors( FileSector, PartSectorsPerCluster, trasb, false) == 0);
+               failed = (WriteSectors( FileSector, PartSectorsPerCluster, trasb, false) < PartSectorsPerCluster);
                if (failed)
                { break; }
                WrittenFileByteLength = WrittenFileByteLength + PartClusterByteLength;
@@ -2006,8 +2011,8 @@ void GemdDlg::on_opdirP_clicked()
       }else{
          // Need to refresh listbox content
          LoadSubDir((PartSubDirLevel == 0), true) ;
-         setCursor(QCursor(Qt::ArrowCursor));
       }
+      setCursor(QCursor(Qt::ArrowCursor));
    } // if Seldfiles end
 }
 
@@ -2015,7 +2020,6 @@ void GemdDlg::on_DeleteFiles_clicked()
 {
    unsigned int CurrentDirEntryPos, MainEntryDirPos, button;
    int  DirLevel, listOffset, FileRemainsLevel;
-   char message[256];
    char name[32];
    bool Abort = false;
    bool YesToAll = false;
@@ -2027,7 +2031,6 @@ void GemdDlg::on_DeleteFiles_clicked()
                                         "You are about to delete files and / or directories.\nThey can not be restored!\n\nAre you sure?",
                                         QMessageBox::Yes | QMessageBox::Cancel, this);
       msg->setFont(this->font());
-      msg->exec();
       if (msg->exec() == QMessageBox::Cancel) { return; }
    }
 
@@ -2052,7 +2055,7 @@ void GemdDlg::on_DeleteFiles_clicked()
          // Need to store level, parent & pos in parent
          if (IsSubDir(dirbuf, MainEntryDirPos)) {
             if (!YesToAll) {
-               sprintf(message, "Delete subdirectory %s including all files below?", name);
+               QString message = "Delete subdirectory " + GetAtariFileName(name) + " including all files below?";
                QMessageBox *msg = new QMessageBox(QMessageBox::Warning, "Deleting files!", message,
                                                   QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
                msg->setFont(this->font());
@@ -2075,8 +2078,8 @@ void GemdDlg::on_DeleteFiles_clicked()
                   if((name[0] == '.') && (name[1] == '.') && (name[2] == '\0')) continue;
                   if (IsFile(dirbuf, n)) { //no subdir, it's a file
                      if (!YesToAll) {
-                        sprintf(message, "Delete file %s?", name);
-                        QMessageBox *msg = new QMessageBox(QMessageBox::Warning, name, message,
+                        QString message = "Delete file " + GetAtariFileName(name) + " ?";
+                        QMessageBox *msg = new QMessageBox(QMessageBox::Warning, GetAtariFileName(name), message,
                                                            QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
                         msg->setFont(this->font());
                         button = msg->exec();
@@ -2088,8 +2091,8 @@ void GemdDlg::on_DeleteFiles_clicked()
                   }else if (IsSubDir(dirbuf, n)) {
                      // its a subdir -> store pos in dir, leave n loop
                      if (!YesToAll) {
-                        sprintf(message, "Delete subdirectory %s including all files below?", name);
-                        QMessageBox *msg = new QMessageBox(QMessageBox::Warning, name, message,
+                        QString message = "Delete subdirectory " + GetAtariFileName(name) + " including all files below?";
+                        QMessageBox *msg = new QMessageBox(QMessageBox::Warning, GetAtariFileName(name), message,
                                                            QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
                         msg->setFont(this->font());
                         button = msg->exec();
@@ -2129,9 +2132,8 @@ void GemdDlg::on_DeleteFiles_clicked()
          }
          if (Abort) { break; }
          if (!YesToAll) {
-            sprintf(message, "Delete file %s?", name);
-            sprintf(message, "Delete subdirectory %s including all files below?", name);
-            QMessageBox *msg = new QMessageBox(QMessageBox::Warning, name, message,
+            QString message = "Delete file " + GetAtariFileName(name) + " ?";
+            QMessageBox *msg = new QMessageBox(QMessageBox::Warning, GetAtariFileName(name), message,
                                                QMessageBox::Yes | QMessageBox::No | QMessageBox::YesToAll | QMessageBox::Abort, this);
             msg->setFont(this->font());
             button = msg->exec();
@@ -2153,8 +2155,8 @@ void GemdDlg::on_DeleteFiles_clicked()
       loadroot(true);
    } else {
       LoadSubDir((PartSubDirLevel == 0), true) ;
-      setCursor(QCursor(Qt::ArrowCursor));
    }
+   setCursor(QCursor(Qt::ArrowCursor));
 }
 
 void GemdDlg::on_ExtractFiles_clicked()

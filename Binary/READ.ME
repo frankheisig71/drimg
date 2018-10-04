@@ -33,7 +33,7 @@ Using Linux binary:
     #>sudo apt install ./drimg.deb
   or
     #>sudo dpkg -i ./drimg.deb 
-If you are using GNOME, LXDE, etc. instead KDE, you probably nee to to change 
+If you are using GNOME, LXDE, etc. instead KDE, you probably need to to change 
    /usr/share/applications/drimg.desktop
 change 
    Exec=kdesudo ...
@@ -75,7 +75,7 @@ over.
 If you have a drive showing another sector size than 512 bytes:
 This is another Microsoft story. For reading/writing to real devices, Windows needs to read/write from sector 
 aligned memory a sector aligned amout of bytes. The special thing is: The application needs to take care for
-that, not the device driver as one would expect! That (fu..... stupid) behavior has taken me several days 
+that, not the device driver as one would expect. That (fu..... stupid) behavior has taken me several days 
 struggling with error 87. 
 However - the current code should work with all sector sizes, but in fact ist's only tested with 512 bytes
 sector size, caused by the lack of devices with bigger sector sizes. (Probably all drives with bigger sectors 
